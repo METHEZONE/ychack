@@ -185,39 +185,98 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
         </button>
       </div>
 
-      {/* Greeting text */}
-      <div className="px-5 pb-3">
-        <div
-          className="text-sm font-semibold leading-relaxed min-h-[40px]"
-          style={{ color: "var(--text)" }}
-        >
-          {greetingText}
-          {greetingText.length < GREETING_TEXT.length && (
-            <span className="typewriter-cursor" style={{ color: "var(--primary)" }}>▌</span>
-          )}
-        </div>
+      {/* Greeting / Chat history */}
+      <div className="px-5 pb-2 max-h-60 overflow-y-auto">
+        {/* Greeting (only when no chat yet) */}
+        {chatMessages.length === 0 && (
+          <div className="text-sm font-semibold leading-relaxed min-h-[40px] mb-2" style={{ color: "var(--text)" }}>
+            {greetingText}
+            {greetingText.length < GREETING_TEXT.length && (
+              <span className="typewriter-cursor" style={{ color: "var(--primary)" }}>▌</span>
+            )}
+          </div>
+        )}
+
+        {/* Chat messages */}
+        {chatMessages.map((msg, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mb-2`}
+          >
+            <div className="flex flex-col gap-1.5 max-w-[90%]">
+              <div
+                className="px-3 py-2 rounded-2xl text-xs font-semibold leading-relaxed"
+                style={msg.role === "user"
+                  ? { background: "var(--primary)", color: "white", borderRadius: "16px 16px 4px 16px" }
+                  : { background: "var(--panel)", color: "var(--text)", border: "1.5px solid var(--border-game)", borderRadius: "16px 16px 16px 4px" }
+                }
+              >
+                {msg.content}
+              </div>
+              {/* Choice buttons below agent message */}
+              {msg.role === "agent" && msg.choices && (
+                <div className="flex flex-col gap-1">
+                  {msg.choices.map((choice, ci) => (
+                    <motion.button
+                      key={ci}
+                      whileHover={{ scale: 1.02, x: 2 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => handleChoiceClick(choice, msg.pendingQuery ?? "")}
+                      disabled={isForaging || agentBusy || chatLoading}
+                      className="text-left text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40 transition-all"
+                      style={{
+                        background: "var(--cream)",
+                        color: "var(--primary-dark)",
+                        border: "2px solid var(--border-game)",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+                      }}
+                    >
+                      {choice}
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        ))}
+
+        {/* Loading indicator */}
+        {chatLoading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start mb-2">
+            <div className="px-3 py-2 rounded-2xl text-xs" style={{ background: "var(--panel)", border: "1.5px solid var(--border-game)" }}>
+              <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1 }}>
+                🌿 thinking...
+              </motion.span>
+            </div>
+          </motion.div>
+        )}
+        <div ref={chatEndRef} />
       </div>
 
-      {/* Quick search chips */}
-      <div className="px-5 pb-3 flex flex-wrap gap-2">
-        {QUICK_SEARCHES.map((s) => (
-          <motion.button
-            key={s}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => { playClick(); handleSearch(s); }}
-            disabled={isForaging || agentBusy}
-            className="text-xs font-bold px-3 py-1.5 rounded-full disabled:opacity-50 transition-colors"
-            style={{
-              background: "var(--panel)",
-              color: "var(--primary-dark)",
-              border: "2px solid var(--border-game)",
-            }}
-          >
-            {s}
-          </motion.button>
-        ))}
-      </div>
+      {/* Quick search chips (only when no conversation started) */}
+      {chatMessages.length === 0 && (
+        <div className="px-5 pb-3 flex flex-wrap gap-2">
+          {QUICK_SEARCHES.map((s) => (
+            <motion.button
+              key={s}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => { playClick(); doForage(s); }}
+              disabled={isForaging || agentBusy}
+              className="text-xs font-bold px-3 py-1.5 rounded-full disabled:opacity-50 transition-colors"
+              style={{
+                background: "var(--panel)",
+                color: "var(--primary-dark)",
+                border: "2px solid var(--border-game)",
+              }}
+            >
+              {s}
+            </motion.button>
+          ))}
+        </div>
+      )}
 
       {/* Input + send */}
       <div className="flex gap-2 px-5 pb-5">
