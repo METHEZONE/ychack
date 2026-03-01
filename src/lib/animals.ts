@@ -1,23 +1,25 @@
 export type AnimalType =
   | "fox"
   | "raccoon"
-  | "bear"
   | "frog"
   | "rabbit"
   | "squirrel"
   | "deer"
   | "owl"
   | "hedgehog"
-  | "cat";
+  | "cat"
+  | "lion";
 
+// Note: "bear" (Gomi) is the permanent village mayor — NOT a vendor NPC
+// Note: "milo" is the player character — NOT a vendor NPC
 export const ANIMAL_TYPES: AnimalType[] = [
   "fox",
   "raccoon",
-  "bear",
-  "frog",
   "rabbit",
-  "squirrel",
   "deer",
+  "lion",
+  "frog",
+  "squirrel",
   "owl",
   "hedgehog",
   "cat",
@@ -27,7 +29,6 @@ export const ANIMAL_TYPES: AnimalType[] = [
 export const ANIMAL_EMOJI: Record<AnimalType, string> = {
   fox: "🦊",
   raccoon: "🦝",
-  bear: "🐻",
   frog: "🐸",
   rabbit: "🐰",
   squirrel: "🐿️",
@@ -35,13 +36,13 @@ export const ANIMAL_EMOJI: Record<AnimalType, string> = {
   owl: "🦉",
   hedgehog: "🦔",
   cat: "🐱",
+  lion: "🦁",
 };
 
 // Colors for NPC name badges
 export const ANIMAL_COLORS: Record<AnimalType, string> = {
   fox: "#e07040",
   raccoon: "#607080",
-  bear: "#a07050",
   frog: "#50a060",
   rabbit: "#e080a0",
   squirrel: "#c07030",
@@ -49,13 +50,13 @@ export const ANIMAL_COLORS: Record<AnimalType, string> = {
   owl: "#7060a0",
   hedgehog: "#806050",
   cat: "#a080c0",
+  lion: "#c09030",
 };
 
 // NPC first names by animal type
 const NPC_NAMES: Record<AnimalType, string[]> = {
   fox: ["Rex", "Fiona", "Rusty", "Vixen"],
   raccoon: ["Rocky", "Bandit", "Remy", "Scout"],
-  bear: ["Bruno", "Honey", "Kodiak", "Bindi"],
   frog: ["Hop", "Lilly", "Croaker", "Jade"],
   rabbit: ["Clover", "Hazel", "Bun", "Pip"],
   squirrel: ["Acorn", "Hazel", "Chip", "Nutmeg"],
@@ -63,6 +64,7 @@ const NPC_NAMES: Record<AnimalType, string[]> = {
   owl: ["Hoot", "Sage", "Wren", "Luna"],
   hedgehog: ["Spike", "Bramble", "Prick", "Holly"],
   cat: ["Mochi", "Biscuit", "Nori", "Pesto"],
+  lion: ["Leo", "Simba", "Aslan", "Nala"],
 };
 
 let usedAnimals = new Set<string>();

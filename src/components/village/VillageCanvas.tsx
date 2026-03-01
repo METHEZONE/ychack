@@ -14,6 +14,35 @@ import {
 import { Doc } from "../../../convex/_generated/dataModel";
 import { ANIMAL_EMOJI, AnimalType } from "@/lib/animals";
 import { playClick, playChime } from "@/lib/sounds";
+import { getSpriteSheet, SpriteSheet, SpriteFrame } from "@/lib/sprites";
+
+// Sprite renderer (shared by player + mayor)
+function SpriteDiv({ sheet, frameIdx, displayHeight, flip }: {
+  sheet: SpriteSheet; frameIdx: number; displayHeight: number; flip: boolean;
+}) {
+  const frame: SpriteFrame = sheet.frames[frameIdx] ?? sheet.frames[0];
+  const scale = displayHeight / frame.h;
+  return (
+    <div style={{
+      width: frame.w * scale,
+      height: displayHeight,
+      backgroundImage: `url('${sheet.src}')`,
+      backgroundPosition: `-${frame.x * scale}px -${frame.y * scale}px`,
+      backgroundSize: `${sheet.sheetW * scale}px ${sheet.sheetH * scale}px`,
+      backgroundRepeat: "no-repeat",
+      imageRendering: "pixelated",
+      transform: flip ? "scaleX(-1)" : undefined,
+      transformOrigin: "center",
+      display: "inline-block",
+    }} />
+  );
+}
+
+const MILO_SHEET = getSpriteSheet("milo");
+const GOMI_SHEET = getSpriteSheet("bear");
+// Mayor position (near HQ)
+const MAYOR_SPAWN_X = 42;
+const MAYOR_SPAWN_Y = 44;
 
 type VendorDoc = Doc<"vendors">;
 
@@ -68,6 +97,15 @@ export function VillageCanvas({
   const [nearbyHQ, setNearbyHQ] = useState(false);
   const [newlyApprovedId, setNewlyApprovedId] = useState<string | null>(null);
 
+  // Player sprite state
+  const [playerFrame, setPlayerFrame] = useState(0);
+  const [playerFacing, setPlayerFacing] = useState(1);
+
+  // Gomi Mayor state
+  const nearMayorRef = useRef(false);
+  const [nearMayor, setNearMayor] = useState(false);
+  const [mayorDialogueOpen, setMayorDialogueOpen] = useState(false);
+
   useEffect(() => { dialogueOpenRef.current = dialogueOpen; }, [dialogueOpen]);
   useEffect(() => { vendorsRef.current = approvedVendors; }, [approvedVendors]);
   useEffect(() => { onTalkToVendorRef.current = onTalkToVendor; }, [onTalkToVendor]);
@@ -90,13 +128,29 @@ export function VillageCanvas({
   // Set initial player DOM position
   useEffect(() => {
     if (playerRef.current) {
-      playerRef.current.style.left = "calc(50% - 22px)";
-      playerRef.current.style.top = "calc(65% - 38px)";
+      playerRef.current.style.left = "calc(50% - 32px)";
+      playerRef.current.style.top = "calc(65% - 44px)";
     }
     if (playerShadowRef.current) {
-      playerShadowRef.current.style.left = "calc(50% - 14px)";
+      playerShadowRef.current.style.left = "calc(50% - 16px)";
       playerShadowRef.current.style.top = "calc(65% - 5px)";
     }
+  }, []);
+
+  // Player sprite frame animation — reads walk state from DOM class
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const isWalking = playerRef.current?.classList.contains("player-walking") ?? false;
+      setPlayerFrame(f => {
+        if (isWalking) {
+          // Milo walk: cycle frames 1–4
+          const next = f + 1;
+          return next > 4 ? 1 : next;
+        }
+        return 0; // Milo idle: frame 0
+      });
+    }, 160);
+    return () => clearInterval(iv);
   }, []);
 
   const getNpcPositions = useCallback(() =>
@@ -138,10 +192,10 @@ export function VillageCanvas({
           if (dx !== 0) facingRef.current = dx > 0 ? 1 : -1;
         }
 
-        el.style.left = `calc(${pos.x}% - 22px)`;
-        el.style.top = `calc(${pos.y}% - 38px)`;
+        el.style.left = `calc(${pos.x}% - 32px)`;
+        el.style.top = `calc(${pos.y}% - 44px)`;
         if (shadowEl) {
-          shadowEl.style.left = `calc(${pos.x}% - 14px)`;
+          shadowEl.style.left = `calc(${pos.x}% - 16px)`;
           shadowEl.style.top = `calc(${pos.y}% - 5px)`;
         }
 
@@ -151,8 +205,7 @@ export function VillageCanvas({
         }
         if (facingRef.current !== lastFacing) {
           lastFacing = facingRef.current;
-          const emp = emojiEl();
-          if (emp) emp.style.transform = `scaleX(${facingRef.current})`;
+          setPlayerFacing(facingRef.current);
         }
 
         // Proximity
@@ -175,6 +228,12 @@ export function VillageCanvas({
           nearbyHQRef.current = foundHQ;
           setNearbyHQ(foundHQ);
         }
+        // Mayor proximity
+        const foundMayor = Math.abs(pos.x - MAYOR_SPAWN_X) < PROX_NPC_X && Math.abs(pos.y - MAYOR_SPAWN_Y) < PROX_NPC_Y;
+        if (foundMayor !== nearMayorRef.current) {
+          nearMayorRef.current = foundMayor;
+          setNearMayor(foundMayor);
+        }
       }
       animFrame = requestAnimationFrame(loop);
     };
@@ -188,6 +247,8 @@ export function VillageCanvas({
           if (vendor) { playClick(); onTalkToVendorRef.current(vendor); }
         } else if (nearbyHQRef.current) {
           playClick(); onOpenHQRef.current();
+        } else if (nearMayorRef.current) {
+          playClick(); setMayorDialogueOpen(true);
         }
       }
     };
@@ -274,10 +335,16 @@ export function VillageCanvas({
       {/* Player shadow */}
       <div ref={playerShadowRef} className="absolute rounded-full pointer-events-none" style={{ width: 28, height: 10, background: "rgba(0,0,0,0.18)", filter: "blur(4px)", zIndex: 19 }} />
 
-      {/* Player character */}
+      {/* Player character — Milo */}
       <div ref={playerRef} className="absolute flex flex-col items-center pointer-events-none select-none" style={{ zIndex: 26 }}>
-        <span className="player-emoji" style={{ display: "inline-block", fontSize: "2.4rem", transform: "scaleX(1)" }}>🙂</span>
-        {(nearbyVendorId || nearbyHQ) && (
+        <div style={{ transform: playerFacing < 0 ? "scaleX(-1)" : undefined, display: "inline-block" }}>
+          {MILO_SHEET ? (
+            <SpriteDiv sheet={MILO_SHEET} frameIdx={playerFrame} displayHeight={88} flip={false} />
+          ) : (
+            <span style={{ fontSize: "2.4rem" }}>🙂</span>
+          )}
+        </div>
+        {(nearbyVendorId || nearbyHQ || nearMayor) && (
           <motion.div
             initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
             className="absolute whitespace-nowrap text-xs font-extrabold px-2.5 py-1 rounded-xl shadow-md"
@@ -307,6 +374,60 @@ export function VillageCanvas({
           />
         );
       })}
+
+      {/* Gomi Mayor (permanent NPC near HQ) */}
+      <motion.div
+        className="absolute flex flex-col items-center cursor-pointer"
+        style={{ left: `calc(${MAYOR_SPAWN_X}% - 28px)`, top: `calc(${MAYOR_SPAWN_Y}% - 44px)`, zIndex: 22 }}
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22, delay: 0.5 }}
+        onClick={() => { playClick(); setMayorDialogueOpen(true); }}
+      >
+        <AnimatePresence>
+          {nearMayor && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
+              className="absolute whitespace-nowrap text-xs font-extrabold px-2.5 py-1 rounded-xl shadow-md"
+              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "2px solid var(--accent-hover)", zIndex: 30 }}
+            >
+              💬 Press E
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {GOMI_SHEET ? (
+          <SpriteDiv sheet={GOMI_SHEET} frameIdx={0} displayHeight={80} flip={false} />
+        ) : (
+          <span style={{ fontSize: "2.8rem" }}>🐻</span>
+        )}
+        <span className="text-xs px-2.5 py-1 rounded-2xl mt-1 font-extrabold shadow-md"
+          style={{ background: "#5BAD4E", color: "white", border: "2px solid rgba(255,255,255,0.4)" }}>
+          Gomi
+        </span>
+      </motion.div>
+
+      {/* Mayor Dialogue Overlay */}
+      <AnimatePresence>
+        {mayorDialogueOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="absolute inset-x-0 bottom-24 flex justify-center z-50 px-4"
+            onClick={() => setMayorDialogueOpen(false)}
+          >
+            <div className="px-6 py-4 rounded-3xl shadow-2xl max-w-sm w-full text-center"
+              style={{ background: "var(--cream)", border: "3px solid var(--primary)", color: "var(--text)" }}>
+              <div className="text-3xl mb-2">🐻</div>
+              <p className="font-extrabold text-sm" style={{ color: "var(--primary-dark)" }}>Welcome to Forage Village!</p>
+              <p className="text-xs mt-1.5 font-semibold" style={{ color: "var(--muted)" }}>
+                I&apos;m Gomi, the village mayor. Forage the web to find new vendors, and they&apos;ll move right in! Walk up to a villager and press E to chat.
+              </p>
+              <p className="text-xs mt-3 font-bold" style={{ color: "var(--primary)" }}>[ Click to close ]</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Empty village hint */}
       {approvedVendors.length === 0 && (

@@ -5,9 +5,10 @@ import { v } from "convex/values";
 import { api } from "../_generated/api";
 import { detectCategory } from "./agentmail";
 
+// Note: "bear" (Gomi) = village mayor, "milo" = player — excluded from vendor pool
 const ANIMAL_TYPES = [
-  "fox", "raccoon", "bear", "frog", "rabbit",
-  "squirrel", "deer", "owl", "hedgehog", "cat",
+  "fox", "raccoon", "rabbit", "deer", "lion",
+  "frog", "squirrel", "owl", "hedgehog", "cat",
 ] as const;
 
 type AnimalType = typeof ANIMAL_TYPES[number];
@@ -15,11 +16,11 @@ type AnimalType = typeof ANIMAL_TYPES[number];
 const NPC_NAMES: Record<AnimalType, string[]> = {
   fox: ["Rex", "Fiona", "Rusty", "Vixen"],
   raccoon: ["Rocky", "Bandit", "Remy", "Scout"],
-  bear: ["Bruno", "Honey", "Kodiak", "Bindi"],
-  frog: ["Hop", "Lilly", "Croaker", "Jade"],
   rabbit: ["Clover", "Hazel", "Bun", "Pip"],
-  squirrel: ["Acorn", "Hazel", "Chip", "Nutmeg"],
   deer: ["Bambi", "Fern", "Buck", "Maple"],
+  lion: ["Leo", "Simba", "Aslan", "Nala"],
+  frog: ["Hop", "Lilly", "Croaker", "Jade"],
+  squirrel: ["Acorn", "Hazel", "Chip", "Nutmeg"],
   owl: ["Hoot", "Sage", "Wren", "Luna"],
   hedgehog: ["Spike", "Bramble", "Prick", "Holly"],
   cat: ["Mochi", "Biscuit", "Nori", "Pesto"],

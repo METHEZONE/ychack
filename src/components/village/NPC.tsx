@@ -70,8 +70,10 @@ export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, isMovingI
   const color = ANIMAL_COLORS[animalType] ?? "#888";
   const stageColor = STAGE_COLORS[stage] ?? "#888";
   const spriteSheet = getSpriteSheet(animalType);
-  // Sprite display height — gomi is taller proportionally
-  const SPRITE_H = animalType === "rabbit" ? 72 : 88;
+  // Sprite display heights per animal
+  const SPRITE_H = animalType === "rabbit" ? 72 : animalType === "deer" ? 80 : animalType === "lion" ? 88 : 88;
+  // Lion's frame 0 is a large portrait — walk cycle starts at frame 1
+  const WALK_FRAME_START = animalType === "lion" ? 1 : 0;
 
   const [pos, setPos] = useState({ x: spawnX, y: spawnY });
   const [facingRight, setFacingRight] = useState(true);
@@ -98,14 +100,20 @@ export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, isMovingI
   useEffect(() => {
     if (!spriteSheet) return;
     if (isWalking) {
-      const iv = setInterval(() => setSpriteFrame(f => (f + 1) % 4), 155);
+      // Walk: cycle 4 frames starting from WALK_FRAME_START
+      const iv = setInterval(() => setSpriteFrame(f => {
+        const next = f + 1;
+        return next >= WALK_FRAME_START + 4 ? WALK_FRAME_START : next;
+      }), 155);
+      setSpriteFrame(WALK_FRAME_START);
       return () => clearInterval(iv);
     } else {
-      // idle: subtle 2-frame bob between frame 0 and 1
-      const iv = setInterval(() => setSpriteFrame(f => f === 0 ? 1 : 0), 600);
+      // Idle: subtle 2-frame bob between walk start and walk start+1
+      const iv = setInterval(() => setSpriteFrame(f => f === WALK_FRAME_START ? WALK_FRAME_START + 1 : WALK_FRAME_START), 600);
+      setSpriteFrame(WALK_FRAME_START);
       return () => clearInterval(iv);
     }
-  }, [isWalking, spriteSheet]);
+  }, [isWalking, spriteSheet, WALK_FRAME_START]);
 
   // Wandering loop
   useEffect(() => {

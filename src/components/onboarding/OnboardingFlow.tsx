@@ -186,9 +186,6 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
   const [step, setStep] = useState<OnboardingStep>(initialStep);
   const [dir, setDir] = useState(1);
 
-  // Character
-  const [charIdx, setCharIdx] = useState(0);
-
   // Personal
   const [name, setName] = useState(pendingData?.name ?? googleUser?.name ?? "");
   const [villageName, setVillageName] = useState(pendingData?.villageName ?? "");
@@ -216,18 +213,11 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
   const scrapeWebsite = useAction(api.actions.browserUse.scrapeWebsite);
   const analyzeProduct = useAction(api.actions.claude.analyzeProductNeed);
 
-  const char = CHARACTERS[charIdx];
-  const charType = char?.type ?? "fox";
-  const charLabel = char?.label ?? "Foxi";
-  const charPortraitFrame = char?.portraitFrame ?? 0;
+  const charType = "milo";
+  const charPortraitFrame = 0;
   const displayedNeeds = analyzedNeeds.length > 0 ? analyzedNeeds : DEFAULT_NEEDS;
 
   function goNext(s: OnboardingStep) { setDir(1); playClick(); setStep(s); }
-
-  function cycleChar(d: number) {
-    playClick();
-    setCharIdx(i => (i + d + CHARACTERS.length) % CHARACTERS.length);
-  }
 
   // ── Convex: create user + quests ──────────────────────────────────────────
   async function finishOnboarding(needs: Need[]) {
@@ -396,62 +386,29 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
 
                   {/* Portrait section */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                    <SdLabel>Choose your character</SdLabel>
+                    <SdLabel>Your Character</SdLabel>
 
                     {/* Portrait frame */}
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={charType}
-                        initial={{ scale: 0.85, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1, y: [0, -5, 0] }}
-                        transition={{ scale: { type: "spring", stiffness: 400, damping: 22 }, y: { repeat: Infinity, duration: 2.5, ease: "easeInOut", delay: 0.2 } }}
-                        style={{
-                          background: SD.portrait,
-                          border: `4px solid ${SD.border}`,
-                          boxShadow: `inset 0 0 0 2px ${SD.borderGold}, 0 4px 16px rgba(0,0,0,0.4)`,
-                          borderRadius: 6,
-                          width: 148, height: 164,
-                          display: "flex", alignItems: "flex-end", justifyContent: "center",
-                          overflow: "hidden",
-                          paddingBottom: 4,
-                        }}
-                      >
-                        <SpritePortrait charType={charType} frameIdx={charPortraitFrame} displayH={154} />
-                      </motion.div>
-                    </AnimatePresence>
+                    <motion.div
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ y: { repeat: Infinity, duration: 2.5, ease: "easeInOut" } }}
+                      style={{
+                        background: SD.portrait,
+                        border: `4px solid ${SD.border}`,
+                        boxShadow: `inset 0 0 0 2px ${SD.borderGold}, 0 4px 16px rgba(0,0,0,0.4)`,
+                        borderRadius: 6,
+                        width: 148, height: 164,
+                        display: "flex", alignItems: "flex-end", justifyContent: "center",
+                        overflow: "hidden",
+                        paddingBottom: 4,
+                      }}
+                    >
+                      <SpritePortrait charType={charType} frameIdx={charPortraitFrame} displayH={154} />
+                    </motion.div>
 
-                    {/* ◀ Name ▶ */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <motion.button
-                        onClick={() => cycleChar(-1)}
-                        whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.88 }}
-                        style={{
-                          background: `linear-gradient(180deg, ${SD.borderGold} 0%, ${SD.border} 100%)`,
-                          color: "#fff8e0", border: `2px solid #3c1808`,
-                          boxShadow: "0 2px 0 #3c1808",
-                          borderRadius: 4, width: 32, height: 32,
-                          fontWeight: 900, fontSize: 15, cursor: "pointer",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                        }}
-                      >◀</motion.button>
-
-                      <span style={{ color: SD.text, fontWeight: 800, fontSize: 15, minWidth: 72, textAlign: "center", letterSpacing: "0.03em" }}>
-                        {charLabel}
-                      </span>
-
-                      <motion.button
-                        onClick={() => cycleChar(1)}
-                        whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.88 }}
-                        style={{
-                          background: `linear-gradient(180deg, ${SD.borderGold} 0%, ${SD.border} 100%)`,
-                          color: "#fff8e0", border: `2px solid #3c1808`,
-                          boxShadow: "0 2px 0 #3c1808",
-                          borderRadius: 4, width: 32, height: 32,
-                          fontWeight: 900, fontSize: 15, cursor: "pointer",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                        }}
-                      >▶</motion.button>
-                    </div>
+                    <span style={{ color: SD.text, fontWeight: 800, fontSize: 15, letterSpacing: "0.03em" }}>
+                      Milo
+                    </span>
                   </div>
 
                   <div style={{ height: 1, background: SD.borderGold, opacity: 0.4, margin: "0 -2px" }} />
