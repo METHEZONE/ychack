@@ -2,13 +2,12 @@
 
 import { useQuery, useAction, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { DealProgress } from "./DealProgress";
 import { EmailThread } from "./EmailThread";
-import { ANIMAL_EMOJI, ANIMAL_COLORS, AnimalType } from "@/lib/animals";
 import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
 import { playClick, playChime, playNegotiate } from "@/lib/sounds";
 import { useForageStore } from "@/lib/store";
@@ -27,8 +26,20 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   const sendEmailAction = useAction(api.actions.agentmail.sendEmail);
   const createInbox = useAction(api.actions.agentmail.createVendorInbox);
   const smartFormSubmit = useAction(api.actions.smartOutreach.smartFormSubmission);
+  const findVendorEmail = useAction(api.actions.smartOutreach.findVendorEmail);
   const updateStage = useMutation(api.vendors.updateStage);
+  const toggleAutoReply = useMutation(api.vendors.toggleAutoReply);
   const userId = useForageStore((s) => s.userId);
+
+  // Check user profile completeness for form submission
+  const user = useQuery(api.users.get, userId ? { userId } : "skip");
+  const missingFields: string[] = [];
+  if (user && user !== undefined) {
+    if (!user.companyName) missingFields.push("Company name");
+    if (!user.email) missingFields.push("Email");
+    if (!user.companyDescription) missingFields.push("Business description");
+  }
+  const profileIncomplete = missingFields.length > 0;
 
   const [negotiationDraft, setNegotiationDraft] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
@@ -38,6 +49,34 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   const [sendSuccess, setSendSuccess] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formSubmitStarted, setFormSubmitStarted] = useState(false);
+  const [manualEmail, setManualEmail] = useState("");
+  const [emailLookupDone, setEmailLookupDone] = useState(false);
+  const [emailLooking, setEmailLooking] = useState(false);
+  const [emailLookupSource, setEmailLookupSource] = useState("");
+  const emailLookupRan = useRef(false);
+
+  // Auto-extract contact email from vendor website when missing
+  // Tries Tavily first (~2s), then falls back to Browser Use (~30s)
+  useEffect(() => {
+    if (!vendor || vendor === null) return;
+    if (vendor.contactEmail || emailLookupRan.current || !vendor.website) return;
+    emailLookupRan.current = true;
+    setEmailLooking(true);
+    findVendorEmail({ vendorId: vendor._id })
+      .then((result) => {
+        if (result?.email && !result.alreadyHad) {
+          setManualEmail(result.email);
+        }
+        setEmailLookupSource(result?.source ?? "");
+        setEmailLookupDone(true);
+      })
+      .catch((err) => {
+        console.warn("Email lookup failed:", err);
+        setEmailLookupDone(true);
+      })
+      .finally(() => setEmailLooking(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendor?._id, vendor?.contactEmail, vendor?.website]);
 
   if (vendor === undefined) {
     return (
@@ -61,8 +100,6 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
     );
   }
 
-  const emoji = ANIMAL_EMOJI[vendor.animalType as AnimalType] ?? "🐾";
-  const color = ANIMAL_COLORS[vendor.animalType as AnimalType] ?? "#888";
   const stage = vendor.stage as VendorStage;
   const stageColor = STAGE_COLORS[stage];
 
@@ -77,8 +114,8 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         vendorName: vendor.companyName,
         vendorEmail: vendor.contactEmail ?? "",
         currentQuote: vendor.quote ?? {},
-        userCompanyName: "Your Company",
-        userNeed: "sourcing inquiry",
+        userCompanyName: user?.companyName ?? "Your Company",
+        userNeed: user?.companyDescription ?? "sourcing inquiry",
       });
       setNegotiationDraft(draft);
       setEditedDraft(draft);
@@ -91,11 +128,9 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   async function handleSendNow() {
     if (!vendor || !negotiationDraft) return;
     const body = editMode ? editedDraft : negotiationDraft;
+    const toEmail = vendor.contactEmail || manualEmail.trim();
 
-    if (!vendor.contactEmail) {
-      alert("No contact email found for this vendor. Try reaching out manually.");
-      return;
-    }
+    if (!toEmail) return;
 
     setSending(true);
     try {
@@ -109,11 +144,20 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         inboxId = inbox.inboxId;
       }
 
+      // Save contact email to vendor if manually entered
+      if (!vendor.contactEmail && manualEmail.trim()) {
+        await updateStage({
+          vendorId: vendor._id,
+          stage: vendor.stage as "discovered" | "contacted" | "replied" | "negotiating" | "closed" | "dead",
+          contactEmail: manualEmail.trim(),
+        });
+      }
+
       // Send the email
       await sendEmailAction({
         vendorId: vendor._id,
         inboxId,
-        to: vendor.contactEmail,
+        to: toEmail,
         subject: `Following up — sourcing inquiry for ${vendor.companyName}`,
         body,
         isDraft: false,
@@ -182,14 +226,14 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
           animate={{ y: [0, -4, 0] }}
           transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
           className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl flex-shrink-0 shadow-sm"
-          style={{ background: color + "25", border: `2.5px solid ${color}55` }}
+          style={{ background: stageColor + "18", border: `2.5px solid ${stageColor}44` }}
         >
-          {emoji}
+          🏢
         </motion.div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-extrabold" style={{ color: "var(--text)" }}>
-              {vendor.characterName}
+              {vendor.companyName}
             </h1>
             <span
               className="text-xs px-2.5 py-1 rounded-full font-bold"
@@ -198,9 +242,6 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
               {STAGE_LABELS[stage]}
             </span>
           </div>
-          <p className="text-sm font-semibold mt-0.5" style={{ color: "var(--muted)" }}>
-            {vendor.companyName}
-          </p>
           {vendor.location && (
             <p className="text-xs mt-1 flex items-center gap-1 font-semibold" style={{ color: "var(--muted)" }}>
               📍 {vendor.location}
@@ -220,6 +261,79 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         </div>
       </div>
 
+      {/* Vendor contact email */}
+      <div
+        className="rounded-3xl p-5 mb-5"
+        style={{ background: "var(--cream)", border: "3px solid var(--border-game)" }}
+      >
+        <h2 className="text-xs font-extrabold mb-2 tracking-wider flex items-center gap-2" style={{ color: "var(--primary-dark)" }}>
+          📧 CONTACT EMAIL
+          {emailLooking && (
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ repeat: Infinity, duration: 1.2 }}
+              className="text-xs font-semibold"
+              style={{ color: "var(--muted)" }}
+            >
+              🌐 Searching website with AI agent...
+            </motion.span>
+          )}
+          {!emailLooking && emailLookupDone && !vendor.contactEmail && manualEmail && (
+            <span className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+              {emailLookupSource === "browser_use" ? "Found via Browser Use!" : "Auto-found!"}
+            </span>
+          )}
+          {!emailLooking && emailLookupDone && !vendor.contactEmail && !manualEmail && (
+            <span className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
+              Not found — enter manually
+            </span>
+          )}
+        </h2>
+        {vendor.contactEmail ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold" style={{ color: "var(--text)" }}>
+              {vendor.contactEmail}
+            </span>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--primary)22", color: "var(--primary)" }}>
+              Saved
+            </span>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={manualEmail}
+              onChange={(e) => setManualEmail(e.target.value)}
+              placeholder={emailLooking ? "Searching..." : "vendor@example.com"}
+              className="flex-1 text-sm p-2.5 rounded-2xl outline-none font-semibold"
+              style={{
+                background: "var(--panel)",
+                border: manualEmail ? "2px solid var(--primary)" : "2px solid var(--border-game)",
+                color: "var(--text)",
+              }}
+            />
+            {manualEmail.trim() && (
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={async () => {
+                  playClick();
+                  await updateStage({
+                    vendorId: vendor._id,
+                    stage: vendor.stage as "discovered" | "contacted" | "replied" | "negotiating" | "closed" | "dead",
+                    contactEmail: manualEmail.trim(),
+                  });
+                }}
+                className="px-4 py-2.5 rounded-2xl text-sm font-extrabold flex-shrink-0"
+                style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
+              >
+                Save
+              </motion.button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Deal progress */}
       <div
         className="rounded-3xl p-5 mb-5"
@@ -228,7 +342,47 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         <h2 className="text-xs font-extrabold mb-4 tracking-wider" style={{ color: "var(--primary-dark)" }}>
           DEAL PROGRESS
         </h2>
-        <DealProgress stage={stage} />
+        <DealProgress stage={stage} formSubmitted={vendor.formSubmitted} emailSent={vendor.emailSent} />
+      </div>
+
+      {/* Auto-reply toggle */}
+      <div
+        className="rounded-3xl p-5 mb-5 flex items-center justify-between"
+        style={{ background: "var(--cream)", border: "3px solid var(--border-game)" }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xl">⚡</span>
+          <div>
+            <div className="text-sm font-extrabold" style={{ color: "var(--text)" }}>
+              Auto-reply
+            </div>
+            <div className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
+              AI auto-responds when this vendor emails back
+            </div>
+          </div>
+        </div>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => {
+            playClick();
+            toggleAutoReply({
+              vendorId: vendor._id,
+              autoReply: !vendor.autoReply,
+            });
+          }}
+          className="relative w-12 h-7 rounded-full transition-colors flex-shrink-0"
+          style={{
+            background: vendor.autoReply ? "var(--primary)" : "#cbd5e1",
+            border: vendor.autoReply ? "2px solid var(--primary-dark)" : "2px solid #94a3b8",
+          }}
+        >
+          <motion.div
+            animate={{ x: vendor.autoReply ? 20 : 2 }}
+            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            className="absolute top-0.5 w-5 h-5 rounded-full shadow-sm"
+            style={{ background: "white" }}
+          />
+        </motion.button>
       </div>
 
       {/* Quote */}
@@ -287,8 +441,51 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         </div>
       )}
 
+      {/* Missing profile data warning */}
+      {vendor.website && !vendor.formSubmitted && profileIncomplete && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl p-5 mb-5"
+          style={{ background: "#FFF8E1", border: "3px solid #FFB300" }}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl flex-shrink-0">🐻</span>
+            <div className="flex-1">
+              <div className="text-sm font-extrabold mb-1" style={{ color: "#E65100" }}>
+                Gomi needs more info about you!
+              </div>
+              <p className="text-xs font-semibold mb-2" style={{ color: "#BF360C" }}>
+                To contact this vendor, we need a few details about your business first:
+              </p>
+              <ul className="text-xs font-semibold mb-3 space-y-0.5" style={{ color: "#BF360C" }}>
+                {missingFields.map((f) => (
+                  <li key={f}>• {f}</li>
+                ))}
+              </ul>
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => {
+                  playClick();
+                  router.push(`/village?collectData=true&returnVendor=${vendorId}`);
+                }}
+                className="px-4 py-2.5 rounded-2xl text-sm font-extrabold"
+                style={{
+                  background: "#5BAD4E",
+                  color: "white",
+                  border: "2px solid #3d8b35",
+                }}
+              >
+                🐻 Talk to Gomi
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Smart Form Submission */}
-      {vendor.website && !vendor.formSubmitted && !formSubmitStarted && (
+      {vendor.website && !vendor.formSubmitted && !formSubmitStarted && !profileIncomplete && (
         <div
           className="rounded-3xl p-5 mb-5"
           style={{ background: "var(--cream)", border: "3px solid var(--border-game)" }}
@@ -314,6 +511,68 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
             {formSubmitting ? "Composing message..." : "📋 Submit Contact Form"}
           </motion.button>
         </div>
+      )}
+
+      {/* Form submission failed — missing fields from Browser Use */}
+      {vendor.formFailureReason && !vendor.formSubmitted && !formSubmitStarted && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl p-5 mb-5"
+          style={{ background: "#FFF3E0", border: "3px solid #FF9800" }}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl flex-shrink-0">🐻</span>
+            <div className="flex-1">
+              <div className="text-sm font-extrabold mb-1" style={{ color: "#E65100" }}>
+                Form submission needs more info!
+              </div>
+              <p className="text-xs font-semibold mb-2" style={{ color: "#BF360C" }}>
+                The vendor&apos;s form couldn&apos;t be filled completely:
+              </p>
+              {vendor.formMissingFields && vendor.formMissingFields.length > 0 && (
+                <ul className="text-xs font-semibold mb-2 space-y-0.5" style={{ color: "#BF360C" }}>
+                  {vendor.formMissingFields.map((f: string) => (
+                    <li key={f}>• {f}</li>
+                  ))}
+                </ul>
+              )}
+              {vendor.formFailureReason && (
+                <p className="text-xs font-semibold mb-3 italic" style={{ color: "#BF360C" }}>
+                  {vendor.formFailureReason}
+                </p>
+              )}
+              <div className="flex gap-2 flex-wrap">
+                <motion.button
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => {
+                    playClick();
+                    router.push(`/village?collectData=true&returnVendor=${vendorId}`);
+                  }}
+                  className="px-4 py-2.5 rounded-2xl text-sm font-extrabold"
+                  style={{ background: "#5BAD4E", color: "white", border: "2px solid #3d8b35" }}
+                >
+                  🐻 Talk to Gomi
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => {
+                    playClick();
+                    setFormSubmitting(false);
+                    setFormSubmitStarted(false);
+                    handleSmartFormSubmit();
+                  }}
+                  className="px-4 py-2.5 rounded-2xl text-sm font-extrabold"
+                  style={{ background: "var(--panel)", color: "var(--primary-dark)", border: "2px solid var(--border-game)" }}
+                >
+                  🔄 Try again
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
       )}
 
       {/* Form submission in progress */}
@@ -397,18 +656,33 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl p-4 mb-5 flex items-center gap-3"
+          className="rounded-3xl p-4 mb-5"
           style={{ background: "#E8F5D0", border: "2.5px solid var(--primary)" }}
         >
-          <span className="text-2xl">📬</span>
-          <div>
-            <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>
-              Email sent!
-            </div>
-            <div className="text-xs font-semibold" style={{ color: "var(--primary-dark)" }}>
-              Negotiation email sent to {vendor.companyName}. Stage → Negotiating.
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">📬</span>
+            <div>
+              <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>
+                Email sent!
+              </div>
+              <div className="text-xs font-semibold" style={{ color: "var(--primary-dark)" }}>
+                Negotiation email sent to {vendor.companyName}.
+              </div>
             </div>
           </div>
+          <motion.button
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => { playClick(); setSendSuccess(false); }}
+            className="w-full py-2.5 rounded-2xl text-sm font-extrabold"
+            style={{
+              background: "var(--accent)",
+              color: "var(--text)",
+              border: "2px solid var(--accent-hover)",
+            }}
+          >
+            ✉️ Send another email
+          </motion.button>
         </motion.div>
       )}
 
@@ -456,7 +730,7 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
           <div className="flex gap-2">
             <motion.button
               onClick={handleSendNow}
-              disabled={sending}
+              disabled={sending || (!vendor.contactEmail && !manualEmail.trim())}
               whileHover={{ scale: sending ? 1 : 1.03 }}
               whileTap={{ scale: sending ? 1 : 0.96 }}
               className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold disabled:opacity-50"

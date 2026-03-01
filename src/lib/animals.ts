@@ -56,7 +56,7 @@ export const ANIMAL_COLORS: Record<AnimalType, string> = {
 // NPC first names by animal type
 const NPC_NAMES: Record<AnimalType, string[]> = {
   fox: ["Rex", "Fiona", "Rusty", "Vixen"],
-  raccoon: ["Rocky", "Bandit", "Remy", "Scout"],
+  raccoon: ["Bandit", "Remy", "Scout", "Ash"],
   frog: ["Hop", "Lilly", "Croaker", "Jade"],
   rabbit: ["Clover", "Hazel", "Bun", "Pip"],
   squirrel: ["Acorn", "Hazel", "Chip", "Nutmeg"],

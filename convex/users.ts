@@ -98,6 +98,35 @@ export const updatePreferences = mutation({
   },
 });
 
+// Wipe all data for a user (quests, vendors, workflow nodes, messages, chat messages, user)
+export const nukeUserData = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    // Delete all vendors + their messages + workflow nodes
+    const vendors = await ctx.db.query("vendors").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect();
+    for (const v of vendors) {
+      const msgs = await ctx.db.query("messages").withIndex("by_vendor", (q) => q.eq("vendorId", v._id)).collect();
+      for (const m of msgs) await ctx.db.delete(m._id);
+      await ctx.db.delete(v._id);
+    }
+
+    // Delete workflow nodes via quests
+    const quests = await ctx.db.query("quests").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect();
+    for (const quest of quests) {
+      const nodes = await ctx.db.query("workflowNodes").withIndex("by_quest", (q) => q.eq("questId", quest._id)).collect();
+      for (const n of nodes) await ctx.db.delete(n._id);
+      await ctx.db.delete(quest._id);
+    }
+
+    // Delete chat messages
+    const chats = await ctx.db.query("chatMessages").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect();
+    for (const c of chats) await ctx.db.delete(c._id);
+
+    // Delete user
+    await ctx.db.delete(args.userId);
+  },
+});
+
 export const updateCompanyData = mutation({
   args: {
     userId: v.id("users"),
@@ -108,6 +137,10 @@ export const updateCompanyData = mutation({
     extractedCompanyData: v.optional(v.any()),
     needs: v.optional(v.array(v.string())),
     isNewBusiness: v.optional(v.boolean()),
+    productionScale: v.optional(v.string()),
+    timeline: v.optional(v.string()),
+    geoPreference: v.optional(v.string()),
+    gomiOnboardingDone: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { userId, ...updates } = args;

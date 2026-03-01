@@ -15,7 +15,7 @@ type AnimalType = typeof ANIMAL_TYPES[number];
 
 const NPC_NAMES: Record<AnimalType, string[]> = {
   fox: ["Rex", "Fiona", "Rusty", "Vixen"],
-  raccoon: ["Rocky", "Bandit", "Remy", "Scout"],
+  raccoon: ["Bandit", "Remy", "Scout", "Ash"],
   rabbit: ["Clover", "Hazel", "Bun", "Pip"],
   deer: ["Bambi", "Fern", "Buck", "Maple"],
   lion: ["Leo", "Simba", "Aslan", "Nala"],
@@ -45,13 +45,22 @@ export const forageForVendors = action({
     const companyName = user?.companyName ?? "Our Company";
     const companyDescription = user?.companyDescription ?? "";
     const userEmail = user?.email ?? null;
+    const productionScale = user?.productionScale ?? "";
+    const timeline = user?.timeline ?? "";
+    const geoPreference = user?.geoPreference ?? "";
 
-    // 2. Get or create quest
+    // 2. Get or create quest (assign agent character to quest)
     let questId = args.questId;
     if (!questId) {
+      const existingQuests = await ctx.runQuery(api.quests.listByUser, { userId: args.userId });
+      const questIndex = existingQuests.length;
+      const { animalType: questAnimal, characterName: questCharName } = assignAnimal(questIndex);
+
       questId = await ctx.runMutation(api.quests.create, {
         userId: args.userId,
         description: args.searchQuery,
+        animalType: questAnimal,
+        characterName: questCharName,
       });
     }
 
@@ -104,8 +113,11 @@ export const forageForVendors = action({
     }
 
     // 6. Process all vendors in parallel
+    const scaleInfo = productionScale ? `\n\nWe're looking to produce ${productionScale}${timeline ? ` with a timeline of ${timeline}` : ""}.` : "";
+    const geoInfo = geoPreference ? ` Our preference for vendor location: ${geoPreference}.` : "";
+
     const outreachMessage = (vendorName: string) =>
-      `Hi,\n\nWe came across ${vendorName} and are interested in sourcing ${args.searchQuery} for our brand.\n\nCould you share your pricing, minimum order quantity, and lead times? We're currently evaluating suppliers and ${vendorName} looks like a strong fit.\n\nLooking forward to hearing from you!\n\nBest,\n${contactName}\n${companyName}`;
+      `Hi,\n\nWe came across ${vendorName} and are interested in sourcing ${args.searchQuery} for our brand.${scaleInfo}${geoInfo}\n\nCould you share your pricing, minimum order quantity, and lead times? We're currently evaluating suppliers and ${vendorName} looks like a strong fit.\n\nLooking forward to hearing from you!\n\nBest,\n${contactName}\n${companyName}`;
 
     await Promise.all(
       rawVendors.map(async (raw, i) => {

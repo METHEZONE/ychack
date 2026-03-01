@@ -18,6 +18,10 @@ export default defineSchema({
     activeQuestId: v.optional(v.string()), // currently active quest
     tutorialDone: v.optional(v.boolean()),
     demoSeeded: v.optional(v.boolean()),
+    productionScale: v.optional(v.string()), // e.g. "500-1000 units, ~$5,000"
+    timeline: v.optional(v.string()), // e.g. "Samples by April, launch by summer"
+    geoPreference: v.optional(v.string()), // e.g. "US preferred, open to Asia"
+    gomiOnboardingDone: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_google_id", ["googleId"])
@@ -31,6 +35,8 @@ export default defineSchema({
       v.literal("completed"),
       v.literal("paused")
     ),
+    animalType: v.optional(v.string()), // agent character managing this quest
+    characterName: v.optional(v.string()), // agent NPC name
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
 
@@ -72,6 +78,9 @@ export default defineSchema({
     agentNotes: v.optional(v.string()), // AI assessment
     userApproved: v.optional(v.boolean()), // user approved vendor into village
     userSeen: v.optional(v.boolean()), // user has seen this vendor notification
+    formFailureReason: v.optional(v.string()), // why form submission failed
+    formMissingFields: v.optional(v.array(v.string())), // fields Browser Use couldn't fill
+    autoReply: v.optional(v.boolean()), // auto-reply to vendor emails
     positionX: v.optional(v.number()), // village x position
     positionY: v.optional(v.number()), // village y position
   })

@@ -15,11 +15,10 @@ interface TreeNodeData {
   deadReason?: string;
   reason?: string;
   vendorId?: string;
-  vendor?: {
-    _id: string;
-    companyName: string;
+  // Agent character for quest root nodes only
+  questAgent?: {
     animalType: string;
-    stage: string;
+    characterName: string;
   };
 }
 
@@ -31,25 +30,38 @@ interface TreeNodeProps {
 export function TreeNode({ node, isRoot }: TreeNodeProps) {
   const router = useRouter();
 
+  // ── Root node: quest with agent character ──────────────────────────────
   if (isRoot) {
+    const agent = node.questAgent;
+    const agentEmoji = agent
+      ? ANIMAL_EMOJI[agent.animalType as AnimalType] ?? "🐾"
+      : "🗺️";
+
     return (
       <div
-        className="px-6 py-3 rounded-2xl font-extrabold text-center text-sm shadow-md"
+        className="rounded-3xl font-extrabold text-center text-sm shadow-md"
         style={{
           background: "var(--primary)",
           color: "white",
           border: "2.5px solid var(--primary-dark)",
-          minWidth: 200,
+          minWidth: 220,
+          padding: agent ? "16px 24px 14px" : "12px 24px",
         }}
       >
-        🗺️ {node.label}
+        {/* Agent character at head */}
+        {agent && (
+          <div className="mb-1.5">
+            <div className="text-3xl mb-0.5">{agentEmoji}</div>
+            <div className="text-xs font-bold opacity-80">{agent.characterName}</div>
+          </div>
+        )}
+        {!agent && <span className="mr-1.5">🗺️</span>}
+        <div className="text-sm font-extrabold">{node.label}</div>
       </div>
     );
   }
 
-  const emoji = node.vendor
-    ? ANIMAL_EMOJI[node.vendor.animalType as AnimalType] ?? "🐾"
-    : "🏢";
+  // ── Vendor node: company info only, no character ───────────────────────
   const stageColor = STAGE_COLORS[node.stage as VendorStage] ?? "#888";
   const stageLabel = STAGE_LABELS[node.stage as VendorStage] ?? node.stage;
 
@@ -99,8 +111,13 @@ export function TreeNode({ node, isRoot }: TreeNodeProps) {
           </div>
         )}
 
-        <div className="text-2xl mb-1.5">{emoji}</div>
+        {/* Company icon */}
+        <div className="text-xl mb-1">🏢</div>
+
+        {/* Company name */}
         <div className="font-extrabold text-xs">{node.label}</div>
+
+        {/* Stage badge */}
         <div
           className="text-xs mt-1.5 px-2 py-0.5 rounded-full inline-block font-bold"
           style={{ background: stageColor + "22", color: stageColor, border: `1.5px solid ${stageColor}44` }}

@@ -334,18 +334,9 @@ export const handleInboundEmail = action({
       });
     }
 
-    // ── Save draft reply ──────────────────────────────────────────────────────
+    // ── Prepare reply ────────────────────────────────────────────────────────
     const draftSubject = args.subject.startsWith("Re:") ? args.subject : `Re: ${args.subject}`;
-    const draftMessageId = await ctx.runMutation(api.messages.create, {
-      vendorId: resolvedId,
-      direction: "outbound",
-      content: analysis.draftReply,
-      type: "email",
-      isDraft: true,
-      subject: draftSubject,
-    });
 
-    // ── Notify user with approval prompt ─────────────────────────────────────
     const quoteText = hasQuote
       ? `\n💰 Quote: ${[
           analysis.quote.price && `Price: ${analysis.quote.price}`,
@@ -357,6 +348,58 @@ export const handleInboundEmail = action({
     const keyPointsText = analysis.keyPoints.length
       ? `\n• ${analysis.keyPoints.join("\n• ")}`
       : "";
+
+    // ── Auto-reply mode: send immediately without user approval ─────────────
+    if (vendor.autoReply) {
+      // Save as sent message (not draft)
+      await ctx.runMutation(api.messages.create, {
+        vendorId: resolvedId,
+        direction: "outbound",
+        content: analysis.draftReply,
+        type: "auto_negotiation",
+        isDraft: false,
+        subject: draftSubject,
+      });
+
+      // Actually send the email
+      const mail = getClient();
+      const inboxId = vendor.agentmailInboxId ?? CATEGORY_INBOX.other;
+      await mail.inboxes.messages.send(inboxId, {
+        to: [args.fromEmail],
+        subject: subjectWithRef(draftSubject, resolvedId),
+        text: analysis.draftReply,
+      });
+
+      // Advance to negotiating
+      await ctx.runMutation(api.vendors.updateStage, {
+        vendorId: resolvedId,
+        stage: "negotiating",
+        emailSent: true,
+      });
+
+      // Notify user (informational, no approval needed)
+      await ctx.runMutation(api.chatMessages.create, {
+        userId: vendor.userId,
+        role: "agent",
+        content: `📨 **${vendor.companyName}** replied!\n\n${analysis.summary}${quoteText}${keyPointsText}\n\n---\n⚡ **Auto-reply sent!** (Auto-reply is ON for this vendor)`,
+        metadata: {
+          action: "auto_replied",
+          vendorId: resolvedId,
+        },
+      });
+
+      return;
+    }
+
+    // ── Manual mode: save draft and wait for user approval ───────────────────
+    const draftMessageId = await ctx.runMutation(api.messages.create, {
+      vendorId: resolvedId,
+      direction: "outbound",
+      content: analysis.draftReply,
+      type: "email",
+      isDraft: true,
+      subject: draftSubject,
+    });
 
     await ctx.runMutation(api.chatMessages.create, {
       userId: vendor.userId,

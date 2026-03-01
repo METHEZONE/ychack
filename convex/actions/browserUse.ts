@@ -231,12 +231,16 @@ Return JSON:
   "formFound": true/false,
   "formSubmitted": true/false,
   "formUrl": "URL of the form page",
-  "blockedReason": "reason if blocked, null otherwise"
+  "blockedReason": "reason if blocked, null otherwise",
+  "missingFields": ["list of form fields you could not fill because you lacked the data, e.g. 'phone number', 'specific product type', 'quantity needed'"],
+  "fieldsFilledSuccessfully": ["list of fields you filled successfully"]
 }`.trim();
 
     let success = false;
     let formUrl: string | null = null;
     let output = "";
+    let blockedReason: string | null = null;
+    let missingFields: string[] = [];
 
     try {
       const session = await runSession(task, "bu-mini", 1.0);
@@ -246,19 +250,25 @@ Return JSON:
         formSubmitted?: boolean;
         formUrl?: string;
         blockedReason?: string;
+        missingFields?: string[];
       }>(output);
 
       success = result?.formSubmitted ?? false;
       formUrl = result?.formUrl ?? null;
+      blockedReason = result?.blockedReason ?? null;
+      missingFields = result?.missingFields ?? [];
     } catch (e) {
       output = e instanceof Error ? e.message : "Browser Use session failed";
+      blockedReason = output;
     }
 
-    // Update vendor record
+    // Update vendor record with failure info
     await ctx.runMutation(api.vendors.updateStage, {
       vendorId: args.vendorId,
       stage: success ? "contacted" : "discovered",
       formSubmitted: success,
+      ...((!success && blockedReason) ? { formFailureReason: blockedReason } : {}),
+      ...((!success && missingFields.length > 0) ? { formMissingFields: missingFields } : {}),
     });
 
     // Record form submission message
@@ -300,16 +310,78 @@ Return JSON:
         }
       }
     } else {
+      // Build failure message with specific details
+      const missingFieldsNote = missingFields.length > 0
+        ? `\n\nThe form needed: **${missingFields.join(", ")}**. Talk to Gomi in the village to update your profile!`
+        : "";
+      const reasonNote = blockedReason
+        ? `\n\nReason: ${blockedReason}`
+        : "";
+
       await ctx.runMutation(api.chatMessages.create, {
         userId: args.userId,
         role: "agent",
-        content: `Could not submit the contact form for **${vendorName}**. The form might require manual input or have a captcha. You can try visiting their website directly.`,
-        choices: ["Visit website", "Try again", "Skip this vendor"],
-        metadata: { action: "form_failed", vendorId: args.vendorId },
+        content: `Could not submit the contact form for **${vendorName}**.${reasonNote}${missingFieldsNote}`,
+        choices: ["🐻 Talk to Gomi", "Visit website", "Try again", "Skip this vendor"],
+        metadata: {
+          action: "form_failed",
+          vendorId: args.vendorId,
+          missingFields,
+          blockedReason,
+        },
       });
     }
 
-    return { success, formUrl, output };
+    return { success, formUrl, output, missingFields, blockedReason };
+  },
+});
+
+// ─── Find vendor contact email via Browser Use ──────────────────────────────
+// Navigates the vendor website to find a contact email address (~30s-1min)
+export const findContactEmail = action({
+  args: {
+    vendorId: v.id("vendors"),
+    vendorWebsite: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ email: string | null }> => {
+    const task = `
+Go to ${args.vendorWebsite} and find a contact email address for this company.
+
+1. Check the main page for visible email addresses
+2. Look for and click "Contact", "Contact Us", "About", "About Us", or "Get in Touch" links
+3. Look for mailto: links, email icons, or text like "Email us at..."
+4. Check the page footer — many sites list emails there
+5. If there's a "Team" or "Leadership" page, check for emails there too
+
+Common email patterns to look for: contact@, info@, sales@, hello@, support@, inquiries@
+
+Return ONLY JSON:
+{
+  "email": "the email address you found, or null if none found",
+  "source": "where you found it (e.g. 'contact page', 'footer', 'about page')"
+}`.trim();
+
+    try {
+      const session = await runSession(task, "bu-mini", 0.3);
+      const result = extractJson<{ email?: string; source?: string }>(session.output ?? "");
+
+      if (result?.email) {
+        // Save to vendor record
+        const vendor = await ctx.runQuery(api.vendors.get, { vendorId: args.vendorId });
+        if (vendor) {
+          await ctx.runMutation(api.vendors.updateStage, {
+            vendorId: args.vendorId,
+            stage: vendor.stage as "discovered" | "contacted" | "replied" | "negotiating" | "closed" | "dead",
+            contactEmail: result.email,
+          });
+        }
+        return { email: result.email };
+      }
+    } catch (e) {
+      console.error("Browser Use email lookup failed:", e);
+    }
+
+    return { email: null };
   },
 });
 

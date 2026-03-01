@@ -81,6 +81,8 @@ export const updateStage = mutation({
     formSubmitted: v.optional(v.boolean()),
     emailSent: v.optional(v.boolean()),
     agentmailInboxId: v.optional(v.string()),
+    formFailureReason: v.optional(v.string()),
+    formMissingFields: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const { vendorId, ...updates } = args;
@@ -129,6 +131,28 @@ export const bulkApprove = mutation({
     for (const id of args.vendorIds) {
       await ctx.db.patch(id, { userApproved: true, userSeen: true });
     }
+  },
+});
+
+export const toggleAutoReply = mutation({
+  args: {
+    vendorId: v.id("vendors"),
+    autoReply: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.vendorId, { autoReply: args.autoReply });
+  },
+});
+
+export const remove = mutation({
+  args: { vendorId: v.id("vendors") },
+  handler: async (ctx, args) => {
+    // Also delete associated workflow node
+    const nodes = await ctx.db.query("workflowNodes").collect();
+    for (const n of nodes) {
+      if (n.vendorId === args.vendorId) await ctx.db.delete(n._id);
+    }
+    await ctx.db.delete(args.vendorId);
   },
 });
 

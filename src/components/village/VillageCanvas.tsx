@@ -5,13 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
-import { NPC } from "./NPC";
+import { QuestNPC, QuestNPCData } from "./QuestNPC";
 import {
   VILLAGE_WIDTH,
   VILLAGE_HEIGHT,
   NPC_SPAWN_OFFSETS,
 } from "@/lib/constants";
-import { Doc } from "../../../convex/_generated/dataModel";
+import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { ANIMAL_EMOJI, AnimalType } from "@/lib/animals";
 import { playClick, playChime } from "@/lib/sounds";
 import { getSpriteSheet, SpriteSheet, SpriteFrame } from "@/lib/sprites";
@@ -40,21 +40,19 @@ function SpriteDiv({ sheet, frameIdx, displayHeight, flip }: {
 
 const MILO_SHEET = getSpriteSheet("milo");
 const GOMI_SHEET = getSpriteSheet("bear");
-// Mayor position (near HQ)
 const MAYOR_SPAWN_X = 42;
 const MAYOR_SPAWN_Y = 44;
 
+type QuestDoc = Doc<"quests">;
 type VendorDoc = Doc<"vendors">;
 
 interface VillageCanvasProps {
-  onTalkToVendor: (vendor: VendorDoc) => void;
+  onSelectQuest: (questId: Id<"quests">) => void;
   onOpenHQ: () => void;
+  onOpenGomiCollect: () => void;
   dialogueOpen: boolean;
-  moveInVendorId: string | null;
-  onMoveInComplete: () => void;
 }
 
-// Player speed (% per 60fps frame)
 const SPEED = 0.38;
 const PROX_NPC_X = 11;
 const PROX_NPC_Y = 8;
@@ -64,67 +62,55 @@ const HQ_PCT_X = 50;
 const HQ_PCT_Y = 50;
 
 export function VillageCanvas({
-  onTalkToVendor,
+  onSelectQuest,
   onOpenHQ,
+  onOpenGomiCollect,
   dialogueOpen,
-  moveInVendorId,
-  onMoveInComplete,
 }: VillageCanvasProps) {
   const userId = useForageStore((s) => s.userId);
 
+  // Query quests + vendors to build quest NPCs with vendor counts
+  const quests = useQuery(api.quests.listByUser, userId ? { userId } : "skip");
   const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
 
-  // Only show on map if approved (using DB field)
-  const approvedVendors = (vendors ?? []).filter((v: VendorDoc) => v.userApproved);
+  // Build quest NPC data: each quest = one NPC in village
+  const questNPCs: QuestNPCData[] = (quests ?? []).map((q: QuestDoc) => ({
+    _id: q._id,
+    description: q.description,
+    animalType: q.animalType,
+    characterName: q.characterName,
+    vendorCount: (vendors ?? []).filter((v: VendorDoc) => v.questId === q._id).length,
+    status: q.status,
+  }));
 
-  // DOM refs for game loop
   const playerRef = useRef<HTMLDivElement>(null);
   const playerShadowRef = useRef<HTMLDivElement>(null);
-
-  // Stable refs
   const keysRef = useRef(new Set<string>());
   const dialogueOpenRef = useRef(dialogueOpen);
-  const vendorsRef = useRef<VendorDoc[]>([]);
-  const onTalkToVendorRef = useRef(onTalkToVendor);
+  const questNPCsRef = useRef<QuestNPCData[]>([]);
+  const onSelectQuestRef = useRef(onSelectQuest);
   const onOpenHQRef = useRef(onOpenHQ);
-  const nearbyVendorIdRef = useRef<string | null>(null);
+  const nearbyQuestIdRef = useRef<string | null>(null);
   const nearbyHQRef = useRef(false);
   const playerPos = useRef({ x: 50, y: 65 });
   const facingRef = useRef(1);
 
-  const [nearbyVendorId, setNearbyVendorId] = useState<string | null>(null);
+  const [nearbyQuestId, setNearbyQuestId] = useState<string | null>(null);
   const [nearbyHQ, setNearbyHQ] = useState(false);
-  const [newlyApprovedId, setNewlyApprovedId] = useState<string | null>(null);
-
-  // Player sprite state
   const [playerFrame, setPlayerFrame] = useState(0);
   const [playerFacing, setPlayerFacing] = useState(1);
 
   // Gomi Mayor state
   const nearMayorRef = useRef(false);
   const [nearMayor, setNearMayor] = useState(false);
-  const [mayorDialogueOpen, setMayorDialogueOpen] = useState(false);
+  const onOpenGomiCollectRef = useRef(onOpenGomiCollect);
 
   useEffect(() => { dialogueOpenRef.current = dialogueOpen; }, [dialogueOpen]);
-  useEffect(() => { vendorsRef.current = approvedVendors; }, [approvedVendors]);
-  useEffect(() => { onTalkToVendorRef.current = onTalkToVendor; }, [onTalkToVendor]);
+  useEffect(() => { questNPCsRef.current = questNPCs; }, [questNPCs]);
+  useEffect(() => { onSelectQuestRef.current = onSelectQuest; }, [onSelectQuest]);
   useEffect(() => { onOpenHQRef.current = onOpenHQ; }, [onOpenHQ]);
+  useEffect(() => { onOpenGomiCollectRef.current = onOpenGomiCollect; }, [onOpenGomiCollect]);
 
-  // Move-in cutscene trigger
-  useEffect(() => {
-    if (moveInVendorId) {
-      setNewlyApprovedId(moveInVendorId);
-      playChime();
-      // Clear "new" flag after animation completes
-      const t = setTimeout(() => {
-        setNewlyApprovedId(null);
-        onMoveInComplete();
-      }, 3500);
-      return () => clearTimeout(t);
-    }
-  }, [moveInVendorId, onMoveInComplete]);
-
-  // Set initial player DOM position
   useEffect(() => {
     if (playerRef.current) {
       playerRef.current.style.left = "calc(50% - 32px)";
@@ -136,24 +122,19 @@ export function VillageCanvas({
     }
   }, []);
 
-  // Player sprite frame animation — reads walk state from DOM class
   useEffect(() => {
     const iv = setInterval(() => {
       const isWalking = playerRef.current?.classList.contains("player-walking") ?? false;
       setPlayerFrame(f => {
-        if (isWalking) {
-          // Milo walk: cycle frames 1–4
-          const next = f + 1;
-          return next > 4 ? 1 : next;
-        }
-        return 0; // Milo idle: frame 0
+        if (isWalking) { const next = f + 1; return next > 4 ? 1 : next; }
+        return 0;
       });
     }, 160);
     return () => clearInterval(iv);
   }, []);
 
   const getNpcPositions = useCallback(() =>
-    vendorsRef.current.map((_, i) => {
+    questNPCsRef.current.map((_, i) => {
       const off = NPC_SPAWN_OFFSETS[i % NPC_SPAWN_OFFSETS.length];
       return {
         x: 50 + (off.x / VILLAGE_WIDTH) * 100,
@@ -167,7 +148,6 @@ export function VillageCanvas({
     let animFrame: number;
     let lastWalking = false;
     let lastFacing = 1;
-    const emojiEl = () => playerRef.current?.querySelector<HTMLElement>(".player-emoji");
 
     const loop = () => {
       const el = playerRef.current;
@@ -207,27 +187,26 @@ export function VillageCanvas({
           setPlayerFacing(facingRef.current);
         }
 
-        // Proximity
+        // Proximity checks for quest NPCs
         const npcPositions = getNpcPositions();
-        let foundVendorId: string | null = null;
+        let foundQuestId: string | null = null;
         npcPositions.forEach((npcPos, i) => {
-          const v = vendorsRef.current[i];
-          if (!v || v.stage === "dead") return;
+          const q = questNPCsRef.current[i];
+          if (!q) return;
           if (Math.abs(pos.x - npcPos.x) < PROX_NPC_X && Math.abs(pos.y - npcPos.y) < PROX_NPC_Y) {
-            foundVendorId = v._id;
+            foundQuestId = q._id;
           }
         });
         const foundHQ = Math.abs(pos.x - HQ_PCT_X) < HQ_PROX_X && Math.abs(pos.y - HQ_PCT_Y) < HQ_PROX_Y;
 
-        if (foundVendorId !== nearbyVendorIdRef.current) {
-          nearbyVendorIdRef.current = foundVendorId;
-          setNearbyVendorId(foundVendorId);
+        if (foundQuestId !== nearbyQuestIdRef.current) {
+          nearbyQuestIdRef.current = foundQuestId;
+          setNearbyQuestId(foundQuestId);
         }
         if (foundHQ !== nearbyHQRef.current) {
           nearbyHQRef.current = foundHQ;
           setNearbyHQ(foundHQ);
         }
-        // Mayor proximity
         const foundMayor = Math.abs(pos.x - MAYOR_SPAWN_X) < PROX_NPC_X && Math.abs(pos.y - MAYOR_SPAWN_Y) < PROX_NPC_Y;
         if (foundMayor !== nearMayorRef.current) {
           nearMayorRef.current = foundMayor;
@@ -241,13 +220,13 @@ export function VillageCanvas({
       keysRef.current.add(e.code);
       if ((e.code === "KeyE" || e.code === "Space") && !dialogueOpenRef.current) {
         e.preventDefault();
-        if (nearbyVendorIdRef.current) {
-          const vendor = vendorsRef.current.find((v) => v._id === nearbyVendorIdRef.current);
-          if (vendor) { playClick(); onTalkToVendorRef.current(vendor); }
+        if (nearbyQuestIdRef.current) {
+          playClick();
+          onSelectQuestRef.current(nearbyQuestIdRef.current as Id<"quests">);
         } else if (nearbyHQRef.current) {
           playClick(); onOpenHQRef.current();
         } else if (nearMayorRef.current) {
-          playClick(); setMayorDialogueOpen(true);
+          playClick(); onOpenGomiCollectRef.current();
         }
       }
     };
@@ -265,7 +244,7 @@ export function VillageCanvas({
 
   return (
     <div className="w-full h-full relative overflow-hidden">
-      {/* Pixel art village background */}
+      {/* Background */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/assets/background.png"
@@ -295,42 +274,6 @@ export function VillageCanvas({
         )}
       </div>
 
-
-      {/* Move-in celebration overlay */}
-      <AnimatePresence>
-        {newlyApprovedId && (() => {
-          const vendor = approvedVendors.find((v: VendorDoc) => v._id === newlyApprovedId);
-          if (!vendor) return null;
-          const emoji = ANIMAL_EMOJI[vendor.animalType as AnimalType] ?? "🐾";
-          return (
-            <motion.div
-              key="movein"
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: -20 }}
-              transition={{ type: "spring", stiffness: 300, damping: 24 }}
-              className="absolute top-1/4 left-1/2 z-50 pointer-events-none"
-              style={{ transform: "translateX(-50%)" }}
-            >
-              <div
-                className="flex items-center gap-3 px-5 py-3 rounded-3xl shadow-2xl"
-                style={{ background: "var(--cream)", border: "3px solid var(--primary)" }}
-              >
-                <span className="text-3xl">{emoji}</span>
-                <div>
-                  <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>
-                    {vendor.characterName} is moving in! 🎉
-                  </div>
-                  <div className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
-                    {vendor.companyName} just joined your village
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
-
       {/* Player shadow */}
       <div ref={playerShadowRef} className="absolute rounded-full pointer-events-none" style={{ width: 28, height: 10, background: "rgba(0,0,0,0.18)", filter: "blur(4px)", zIndex: 19 }} />
 
@@ -343,7 +286,7 @@ export function VillageCanvas({
             <span style={{ fontSize: "2.4rem" }}>🙂</span>
           )}
         </div>
-        {(nearbyVendorId || nearbyHQ || nearMayor) && (
+        {(nearbyQuestId || nearbyHQ || nearMayor) && (
           <motion.div
             initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
             className="absolute whitespace-nowrap text-xs font-extrabold px-2.5 py-1 rounded-xl shadow-md"
@@ -354,34 +297,32 @@ export function VillageCanvas({
         )}
       </div>
 
-      {/* Vendor NPCs — move-in animation */}
-      {approvedVendors.map((vendor: VendorDoc, i: number) => {
+      {/* Quest NPCs — one animal per quest */}
+      {questNPCs.map((quest, i) => {
         const offset = NPC_SPAWN_OFFSETS[i % NPC_SPAWN_OFFSETS.length];
         const spawnX = 50 + (offset.x / VILLAGE_WIDTH) * 100;
         const spawnY = 50 + (offset.y / VILLAGE_HEIGHT) * 100;
-        const isMovingIn = vendor._id === newlyApprovedId;
         return (
-          <NPC
-            key={vendor._id}
-            vendor={vendor}
+          <QuestNPC
+            key={quest._id}
+            quest={quest}
             spawnX={spawnX}
             spawnY={spawnY}
             index={i}
-            isNearby={nearbyVendorId === vendor._id}
-            isMovingIn={isMovingIn}
-            onClick={() => { playClick(); onTalkToVendor(vendor); }}
+            isNearby={nearbyQuestId === quest._id}
+            onClick={() => { playClick(); onSelectQuest(quest._id as Id<"quests">); }}
           />
         );
       })}
 
-      {/* Gomi Mayor (permanent NPC near HQ) */}
+      {/* Gomi Mayor */}
       <motion.div
         className="absolute flex flex-col items-center cursor-pointer"
         style={{ left: `calc(${MAYOR_SPAWN_X}% - 28px)`, top: `calc(${MAYOR_SPAWN_Y}% - 44px)`, zIndex: 22 }}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 300, damping: 22, delay: 0.5 }}
-        onClick={() => { playClick(); setMayorDialogueOpen(true); }}
+        onClick={() => { playClick(); onOpenGomiCollectRef.current(); }}
       >
         <AnimatePresence>
           {nearMayor && (
@@ -405,31 +346,8 @@ export function VillageCanvas({
         </span>
       </motion.div>
 
-      {/* Mayor Dialogue Overlay */}
-      <AnimatePresence>
-        {mayorDialogueOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="absolute inset-x-0 bottom-24 flex justify-center z-50 px-4"
-            onClick={() => setMayorDialogueOpen(false)}
-          >
-            <div className="px-6 py-4 rounded-3xl shadow-2xl max-w-sm w-full text-center"
-              style={{ background: "var(--cream)", border: "3px solid var(--primary)", color: "var(--text)" }}>
-              <div className="text-3xl mb-2">🐻</div>
-              <p className="font-extrabold text-sm" style={{ color: "var(--primary-dark)" }}>Welcome to Forage Village!</p>
-              <p className="text-xs mt-1.5 font-semibold" style={{ color: "var(--muted)" }}>
-                I&apos;m Gomi, the village mayor. Forage the web to find new vendors, and they&apos;ll move right in! Walk up to a villager and press E to chat.
-              </p>
-              <p className="text-xs mt-3 font-bold" style={{ color: "var(--primary)" }}>[ Click to close ]</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Empty village hint */}
-      {approvedVendors.length === 0 && (
+      {questNPCs.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: "80px", zIndex: 10 }}>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }}

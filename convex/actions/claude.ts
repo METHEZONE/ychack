@@ -228,13 +228,17 @@ export const scrapeAndAnalyzeWebsite = action({
   handler: async (_ctx, args) => {
     if (!process.env.TAVILY_API_KEY) throw new Error("TAVILY_API_KEY not set");
 
-    // Step 1: Tavily extract — get raw page content
+    // Build URL list: main page + /contact + /about for better email discovery
+    const base = args.url.replace(/\/+$/, "");
+    const urls = [base, `${base}/contact`, `${base}/contact-us`, `${base}/about`];
+
+    // Step 1: Tavily extract — get raw page content from multiple pages
     const extractRes = await fetch("https://api.tavily.com/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: process.env.TAVILY_API_KEY,
-        urls: [args.url],
+        urls,
       }),
     });
 
@@ -242,17 +246,25 @@ export const scrapeAndAnalyzeWebsite = action({
     const extractData = await extractRes.json() as {
       results?: Array<{ url: string; raw_content: string }>;
     };
-    const rawContent = extractData.results?.[0]?.raw_content ?? "";
-    if (!rawContent) throw new Error("No content extracted from website");
+
+    // Combine all extracted content
+    const allContent = (extractData.results ?? [])
+      .map((r) => r.raw_content)
+      .filter(Boolean)
+      .join("\n\n---PAGE BREAK---\n\n");
+
+    if (!allContent) throw new Error("No content extracted from website");
 
     // Step 2: Claude to structure the raw content
-    const prompt = `Extract company information from this website content.
+    const prompt = `Extract company information from this website content. I scraped multiple pages (main, contact, about) to find contact details.
 
 URL: ${args.url}
 Content:
 ---
-${rawContent.slice(0, 3000)}
+${allContent.slice(0, 5000)}
 ---
+
+IMPORTANT: Look carefully for email addresses — they are often on contact or about pages. Check for mailto: links, "email us at", "contact@", "info@", "sales@", "hello@" patterns.
 
 Return ONLY valid JSON:
 {
@@ -295,6 +307,9 @@ export const composeFormMessage = action({
     userContactName: v.string(),
     userCompanyDescription: v.optional(v.string()),
     productNeed: v.string(),
+    productionScale: v.optional(v.string()),
+    timeline: v.optional(v.string()),
+    geoPreference: v.optional(v.string()),
     chatHistory: v.array(
       v.object({
         role: v.union(v.literal("user"), v.literal("agent")),
@@ -307,18 +322,26 @@ export const composeFormMessage = action({
       ? `Recent conversation:\n${args.chatHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}`
       : "No prior conversation.";
 
+    const scaleContext = [
+      args.productionScale ? `Production scale: ${args.productionScale}` : "",
+      args.timeline ? `Timeline: ${args.timeline}` : "",
+      args.geoPreference ? `Vendor location preference: ${args.geoPreference}` : "",
+    ].filter(Boolean).join("\n");
+
     const prompt = `You are drafting a contact/inquiry form message on behalf of ${args.userCompanyName} (${args.userContactName}).
 
 Vendor: ${args.vendorName}
 ${args.vendorWebsite ? `Website: ${args.vendorWebsite}` : ""}
 Product need: ${args.productNeed}
 ${args.userCompanyDescription ? `Company: ${args.userCompanyDescription}` : ""}
+${scaleContext ? `\n${scaleContext}` : ""}
 
 ${chatContext}
 
 Write a professional, friendly inquiry message suitable for a vendor's contact/quote form.
 - 2-3 short paragraphs
 - Mention what we're looking for (from the product need and chat context)
+- Include production scale, timeline, and location preferences if provided
 - Ask about pricing, MOQ, and lead times
 - Keep it warm and concise
 - Do NOT include a subject line — just the message body
