@@ -27,6 +27,7 @@ export function ChatBar() {
   const chatOpen = useForageStore((s) => s.chatOpen);
   const toggleChat = useForageStore((s) => s.toggleChat);
   const agentBusy = useForageStore((s) => s.agentBusy);
+  const agentStatus = useForageStore((s) => s.agentStatus);
   const setAgentBusy = useForageStore((s) => s.setAgentBusy);
   const activeQuestId = useForageStore((s) => s.activeQuestId);
 
@@ -120,7 +121,7 @@ export function ChatBar() {
         <span className="text-lg">{agentBusy ? "🌀" : "🌿"}</span>
         <span>
           {agentBusy
-            ? useForageStore.getState().agentStatus
+            ? agentStatus
             : "Forage Agent"}
         </span>
         {agentBusy && (
