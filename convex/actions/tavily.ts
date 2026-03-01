@@ -27,8 +27,71 @@ interface TavilyExtractResponse {
   failed_results: Array<{ url: string; error: string }>;
 }
 
+// Domains that are directories, aggregators, blogs — not actual vendors
+const EXCLUDED_DOMAINS = [
+  "linkedin.com", "reddit.com", "yelp.com", "facebook.com",
+  "instagram.com", "twitter.com", "x.com",
+  "alibaba.com", "aliexpress.com", "made-in-china.com",
+  "indiamart.com", "dhgate.com", "global-sources.com",
+  "thomasnet.com", "globalspec.com", "kompass.com",
+  "medium.com", "wordpress.com", "blogspot.com", "substack.com",
+  "usetorg.com", "sourceify.co", "supplierlist.com",
+  "quora.com", "trustpilot.com", "glassdoor.com",
+];
+
+// Returns true if the result looks like a list/blog/directory page, not a company site
+function isAggregatorResult(r: TavilySearchResult): boolean {
+  const title = r.title.toLowerCase();
+  const url = r.url.toLowerCase();
+
+  // "15 Best...", "Top 10...", "List of...", "Complete Guide to..."
+  if (/^(\d+\s+)?(best|top\s*\d*|list of|guide to|how to|complete guide|ultimate guide|what is)/i.test(title)) return true;
+
+  // "X Suppliers/Manufacturers" in blog-style title
+  if (/\b(suppliers?|manufacturers?|companies|vendors?)\b/.test(title) && /\b(best|top|\d+)\b/.test(title)) return true;
+
+  // URL path signals it's a blog/article/directory listing
+  if (/\/(blog|article|guide|list|news|post|category|tag|directory|resources?)\//i.test(url)) return true;
+
+  return false;
+}
+
+// Extract a clean company name from domain when page title is unreliable
+function nameFromDomain(url: string): string {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    const base = hostname.split(".")[0]; // e.g. "customcoffeemanufacturer"
+    return base
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  } catch {
+    return url;
+  }
+}
+
+// Pick a company name: prefer first segment of page title; avoid list-article titles
+function extractCompanyName(title: string, url: string): string {
+  // Definitely a list article — skip title entirely
+  if (/^(\d+\s+)?(best|top\s*\d*|list of|guide to|how to|complete guide|ultimate guide)/i.test(title)) {
+    return nameFromDomain(url);
+  }
+  // Take first segment before common separators (handles "Acme Corp | OEM Coffee Roasting")
+  let clean = title.split(/\s*[-–|:]\s*/)[0].trim();
+  // Strip page-level prefixes ("Contact Us - Acme" → "Acme")
+  clean = clean.replace(/^(contact\s+us|contact|about\s+us|about|home|welcome\s+to|welcome)\s+/i, "").trim();
+  return clean || nameFromDomain(url);
+}
+
+// Get root domain for dedup (e.g. "privatelabelcoffeemanufacturer.com")
+function rootDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 // ─── Search: find vendors matching a query ────────────────────────────────────
-// Fast (~1s), replaces Browser Use findVendors for discovery
 export const searchVendors = action({
   args: {
     query: v.string(),
@@ -44,8 +107,7 @@ export const searchVendors = action({
         search_depth: "advanced",
         max_results: args.maxResults ?? 7,
         include_answer: true,
-        include_domains: [], // no restriction
-        exclude_domains: ["linkedin.com", "reddit.com", "yelp.com", "facebook.com"],
+        exclude_domains: EXCLUDED_DOMAINS,
       }),
     });
 
@@ -65,67 +127,70 @@ export const searchVendors = action({
 });
 
 // ─── Extract: scrape company info from a URL ──────────────────────────────────
-// Fast (~1s), replaces Browser Use scrapeWebsite
 export const extractCompanyInfo = action({
-  args: {
-    url: v.string(),
-  },
+  args: { url: v.string() },
   handler: async (_ctx, args) => {
     const res = await fetch(`${TAVILY_BASE}/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: getKey(),
-        urls: [args.url],
-      }),
+      body: JSON.stringify({ api_key: getKey(), urls: [args.url] }),
     });
 
     if (!res.ok) throw new Error(`Tavily extract failed: ${res.status}`);
     const data: TavilyExtractResponse = await res.json();
-
     const result = data.results?.[0];
     if (!result) return null;
 
-    return {
-      url: result.url,
-      rawContent: result.raw_content,
-    };
+    return { url: result.url, rawContent: result.raw_content };
   },
 });
 
 // ─── Research: find vendors + extract their pages (combined, still fast) ──────
-// Returns structured vendor data ready to be stored in Convex
 export const researchVendors = action({
   args: {
     searchQuery: v.string(),
     companyContext: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    // Step 1: Search for vendors (1s)
+    // Step 1: Search — query targets actual company sites, not list articles
+    // "get a quote" / "minimum order" signals a real B2B supplier page
     const searchRes = await fetch(`${TAVILY_BASE}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: getKey(),
-        query: `${args.searchQuery} manufacturer supplier co-packer B2B`,
+        query: `${args.searchQuery} factory OEM private label "get a quote" OR "minimum order" OR "contact us"`,
         search_depth: "advanced",
-        max_results: 6,
+        max_results: 10, // fetch more so we have room to filter
         include_answer: false,
-        exclude_domains: ["linkedin.com", "reddit.com", "yelp.com", "facebook.com", "instagram.com", "twitter.com", "alibaba.com"],
+        exclude_domains: EXCLUDED_DOMAINS,
       }),
     });
 
     if (!searchRes.ok) throw new Error(`Tavily search failed: ${searchRes.status}`);
     const searchData: TavilySearchResponse = await searchRes.json();
 
-    // Step 2: Extract top 4 vendor pages in parallel (2-3s)
-    const topResults = searchData.results.slice(0, 4);
+    // Step 2: Filter out aggregators + deduplicate by root domain
+    const seenDomains = new Set<string>();
+    const filtered = searchData.results
+      .filter((r) => {
+        if (isAggregatorResult(r)) return false;
+        const domain = rootDomain(r.url);
+        if (seenDomains.has(domain)) return false;
+        seenDomains.add(domain);
+        return true;
+      })
+      .slice(0, 4);
+
+    if (filtered.length === 0) return [];
+
+    // Step 3: Extract pages in parallel
     const extractRes = await fetch(`${TAVILY_BASE}/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: getKey(),
-        urls: topResults.map((r) => r.url),
+        urls: filtered.map((r) => r.url),
       }),
     });
 
@@ -135,35 +200,36 @@ export const researchVendors = action({
 
     const extractMap = new Map(extractData.results.map((r) => [r.url, r.raw_content]));
 
-    // Step 3: Build vendor objects
-    const vendors = topResults.map((result) => {
+    // Step 4: Build vendor objects
+    return filtered.map((result) => {
       const content = extractMap.get(result.url) ?? result.content;
 
-      // Extract contact email from page content
-      const emailMatch = content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-      const contactEmail = emailMatch?.[0] ?? null;
+      // Email: skip noreply / privacy@  addresses
+      const emailMatches = content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) ?? [];
+      const contactEmail =
+        emailMatches.find((e) => !/noreply|no-reply|privacy|info@|support@/i.test(e)) ??
+        emailMatches[0] ??
+        null;
 
-      // Detect if inquiry form likely exists
-      const hasContactForm = /contact|inquiry|quote|get.?started|reach.?out/i.test(content);
+      // Contact form: look for form-specific content, not just any "contact" mention
+      const hasContactForm = /\b(inquiry form|contact form|request a quote|get a quote|reach out|send us a message)\b/i.test(content);
 
-      // Extract location hint
+      // Location
       const locationMatch = content.match(
-        /(?:located|headquartered|based)\s+in\s+([A-Z][a-zA-Z\s,]+)|([A-Z][a-zA-Z]+,\s*[A-Z]{2})/
+        /(?:located|headquartered|based)\s+in\s+([A-Z][a-zA-Z\s,]+(?:USA|US|UK|China|India|Germany|Canada|Australia)?)|([A-Z][a-zA-Z\s]+,\s*(?:[A-Z]{2}|USA|UK|China|India|Germany))/
       );
-      const location = locationMatch?.[1] ?? locationMatch?.[2] ?? null;
+      const location = locationMatch?.[1]?.trim() ?? locationMatch?.[2]?.trim() ?? null;
 
       return {
-        companyName: result.title.split(/[-|–]/)[0].trim(),
+        companyName: extractCompanyName(result.title, result.url),
         website: result.url,
         location,
         contactEmail,
         hasContactForm,
         contactFormUrl: hasContactForm ? result.url : null,
-        description: result.content?.slice(0, 150) ?? null,
+        description: result.content?.slice(0, 200) ?? null,
         snippet: content.slice(0, 500),
       };
     });
-
-    return vendors;
   },
 });
