@@ -2,13 +2,13 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { DataModel } from "../../../convex/_generated/dataModel";
+import { Doc } from "../../../convex/_generated/dataModel";
 import { useForageStore } from "@/lib/store";
 import { TreeNode } from "./TreeNode";
 
-type QuestDoc = DataModel["quests"];
-type VendorDoc = DataModel["vendors"];
-type WorkflowNodeDoc = DataModel["workflowNodes"];
+type QuestDoc = Doc<"quests">;
+type VendorDoc = Doc<"vendors">;
+type WorkflowNodeDoc = Doc<"workflowNodes">;
 
 export function DecisionTree() {
   const userId = useForageStore((s) => s.userId);

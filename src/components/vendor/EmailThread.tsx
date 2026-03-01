@@ -2,9 +2,9 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { Id, DataModel } from "../../../convex/_generated/dataModel";
+import { Id, Doc } from "../../../convex/_generated/dataModel";
 
-type MessageDoc = DataModel["messages"];
+type MessageDoc = Doc<"messages">;
 
 interface EmailThreadProps {
   vendorId: Id<"vendors">;

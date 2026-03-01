@@ -85,6 +85,13 @@ export const updateStage = mutation({
   },
 });
 
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("vendors").collect();
+  },
+});
+
 export const updatePosition = mutation({
   args: {
     vendorId: v.id("vendors"),

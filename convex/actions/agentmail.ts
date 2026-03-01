@@ -3,72 +3,65 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
+import { AgentMailClient } from "agentmail";
 
-const AGENTMAIL_API_KEY = process.env.AGENTMAIL_API_KEY;
-const AGENTMAIL_BASE = "https://api.agentmail.to/v0";
-
-async function agentmailRequest(
-  method: string,
-  path: string,
-  body?: unknown
-): Promise<unknown> {
-  if (!AGENTMAIL_API_KEY) throw new Error("AGENTMAIL_API_KEY not set");
-  const res = await fetch(`${AGENTMAIL_BASE}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${AGENTMAIL_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`AgentMail ${method} ${path} failed: ${err}`);
-  }
-  return res.json();
+function getClient() {
+  if (!process.env.AGENTMAIL_API_KEY) throw new Error("AGENTMAIL_API_KEY not set");
+  return new AgentMailClient({ apiKey: process.env.AGENTMAIL_API_KEY });
 }
 
+// Slugify vendor name → inbox username (e.g. "Intelligent Blends" → "forage-intelligent-blends")
+function toInboxUsername(vendorName: string): string {
+  return "forage-" + vendorName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
+}
+
+// ─── Create a per-vendor inbox ────────────────────────────────────────────────
 export const createVendorInbox = action({
   args: {
     vendorId: v.id("vendors"),
     vendorName: v.string(),
   },
   handler: async (ctx, args) => {
-    // Create a dedicated inbox for this vendor thread
-    const inbox = (await agentmailRequest("POST", "/inboxes", {
-      display_name: `Forage - ${args.vendorName}`,
-    })) as { id: string; address: string };
+    const mail = getClient();
 
-    // Store inbox ID on vendor
+    const inbox = await mail.inboxes.create({
+      username: toInboxUsername(args.vendorName),
+      displayName: "Forage Agent",
+    });
+
+    // inboxId IS the full email address (e.g. forage-acme@agentmail.to)
+    const inboxId = inbox.inboxId;
+
     await ctx.runMutation(api.vendors.updateStage, {
       vendorId: args.vendorId,
       stage: "contacted",
-      agentmailInboxId: inbox.id,
+      agentmailInboxId: inboxId,
     });
 
-    return { inboxId: inbox.id, address: inbox.address };
+    return { inboxId };
   },
 });
 
+// ─── Send email from a vendor inbox ──────────────────────────────────────────
 export const sendEmail = action({
   args: {
     vendorId: v.id("vendors"),
-    inboxId: v.string(),
-    to: v.string(),
+    inboxId: v.string(),       // the @agentmail.to address
+    to: v.string(),            // vendor's email
     subject: v.string(),
     body: v.string(),
     isDraft: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     if (!args.isDraft) {
-      await agentmailRequest("POST", `/inboxes/${args.inboxId}/messages`, {
-        to: [{ email: args.to }],
+      const mail = getClient();
+      await mail.inboxes.messages.send(args.inboxId, {
+        to: [args.to],
         subject: args.subject,
         text: args.body,
       });
     }
 
-    // Log in messages table
     await ctx.runMutation(api.messages.create, {
       vendorId: args.vendorId,
       direction: "outbound",
@@ -90,13 +83,99 @@ export const sendEmail = action({
   },
 });
 
+// ─── Full outreach: create inbox + send follow-up email ───────────────────────
+// Call this after Browser Use has scraped the vendor and (attempted) the form.
+export const outreachVendor = action({
+  args: {
+    vendorId: v.id("vendors"),
+    vendorName: v.string(),
+    vendorEmail: v.string(),
+    userCompanyName: v.string(),
+    userContactName: v.string(),
+    productNeed: v.string(),
+    emailBody: v.string(), // Claude-drafted email body passed in
+  },
+  handler: async (ctx, args) => {
+    const mail = getClient();
+
+    // 1. Create dedicated inbox
+    const inbox = await mail.inboxes.create({
+      username: toInboxUsername(args.vendorName),
+      displayName: "Forage Agent",
+    });
+    const inboxId = inbox.inboxId;
+
+    // 2. Send follow-up email
+    await mail.inboxes.messages.send(inboxId, {
+      to: [args.vendorEmail],
+      subject: `Partnership Inquiry — ${args.userCompanyName}`,
+      text: args.emailBody,
+    });
+
+    // 3. Update Convex
+    await ctx.runMutation(api.vendors.updateStage, {
+      vendorId: args.vendorId,
+      stage: "contacted",
+      agentmailInboxId: inboxId,
+      emailSent: true,
+    });
+
+    await ctx.runMutation(api.messages.create, {
+      vendorId: args.vendorId,
+      direction: "outbound",
+      content: args.emailBody,
+      type: "email",
+      isDraft: false,
+      subject: `Partnership Inquiry — ${args.userCompanyName}`,
+    });
+
+    return { inboxId, sent: true };
+  },
+});
+
+// ─── List messages in a vendor inbox ─────────────────────────────────────────
 export const listInboxMessages = action({
   args: { inboxId: v.string() },
   handler: async (_ctx, args) => {
-    const data = (await agentmailRequest(
-      "GET",
-      `/inboxes/${args.inboxId}/messages`
-    )) as { messages: unknown[] };
+    const mail = getClient();
+    const data = await mail.inboxes.messages.list(args.inboxId);
     return data.messages ?? [];
+  },
+});
+
+// ─── Webhook: AgentMail calls this when a vendor replies ─────────────────────
+// Registered in convex/http.ts as POST /agentmail-webhook
+export const handleInboundEmail = action({
+  args: {
+    inboxId: v.string(),
+    fromEmail: v.string(),
+    subject: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Find vendor by inbox ID
+    const vendors = await ctx.runQuery(api.vendors.listAll);
+    const vendor = vendors.find((v) => v.agentmailInboxId === args.inboxId);
+    if (!vendor) {
+      console.warn("Inbound email for unknown inbox:", args.inboxId);
+      return;
+    }
+
+    // Log inbound message
+    await ctx.runMutation(api.messages.create, {
+      vendorId: vendor._id,
+      direction: "inbound",
+      content: args.body,
+      type: "email",
+      isDraft: false,
+      subject: args.subject,
+      from: args.fromEmail,
+    });
+
+    // Advance vendor stage
+    await ctx.runMutation(api.vendors.updateStage, {
+      vendorId: vendor._id,
+      stage: "replied",
+    });
   },
 });
