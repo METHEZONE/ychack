@@ -30,14 +30,24 @@ interface Need {
 
 const STEP_ORDER: OnboardingStep[] = ["welcome", "avatar", "company", "needs", "done"];
 
-export function OnboardingFlow() {
+interface GoogleUser {
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
+
+interface OnboardingFlowProps {
+  googleUser?: GoogleUser | null;
+}
+
+export function OnboardingFlow({ googleUser }: OnboardingFlowProps) {
   const router = useRouter();
   const setUserId = useForageStore((s) => s.setUserId);
   const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
 
-  const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [step, setStep] = useState<OnboardingStep>(googleUser?.name ? "avatar" : "welcome");
   const [direction, setDirection] = useState(1);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(googleUser?.name ?? "");
   const [villageName, setVillageName] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState("🧑‍💼");
   const [analyzedNeeds, setAnalyzedNeeds] = useState<Need[]>([]);
@@ -271,8 +281,18 @@ export function OnboardingFlow() {
               {step === "avatar" && (
                 <div className="space-y-4">
                   <h2 className="text-lg font-extrabold" style={{ color: "var(--text)" }}>
-                    Pick your avatar, {name} 🎭
+                    {googleUser?.name ? `Hey ${name.split(" ")[0]}! Pick your avatar 🎭` : `Pick your avatar, ${name} 🎭`}
                   </h2>
+                  {googleUser?.image && (
+                    <div className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "var(--panel)", border: "2px solid var(--border-game)" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={googleUser.image} alt="Google profile" className="w-10 h-10 rounded-full" referrerPolicy="no-referrer" />
+                      <div>
+                        <p className="text-xs font-extrabold" style={{ color: "var(--primary-dark)" }}>Signed in as</p>
+                        <p className="text-sm font-bold" style={{ color: "var(--text)" }}>{googleUser.name}</p>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-3">
                     {AVATAR_OPTIONS.map((opt) => (
                       <motion.button
@@ -356,7 +376,10 @@ export function OnboardingFlow() {
 
         {/* Progress dots */}
         <div className="flex justify-center gap-2.5 mt-5">
-          {(["welcome", "avatar", "company", "needs"] as OnboardingStep[]).map((s) => {
+          {(googleUser?.name
+            ? (["avatar", "company", "needs"] as OnboardingStep[])
+            : (["welcome", "avatar", "company", "needs"] as OnboardingStep[])
+          ).map((s) => {
             const idx = STEP_ORDER.indexOf(s);
             const curIdx = STEP_ORDER.indexOf(step);
             const isActive = s === step;

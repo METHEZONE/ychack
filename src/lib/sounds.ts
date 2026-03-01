@@ -262,6 +262,69 @@ export function playNegotiate() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Ambient background music — peaceful C major pad for title screen
+// ---------------------------------------------------------------------------
+
+let _ambientCtx: AudioContext | null = null;
+let _ambientInterval: ReturnType<typeof setInterval> | null = null;
+let _ambientOscs: OscillatorNode[] = [];
+
+export function startAmbientMusic() {
+  if (typeof window === "undefined" || _ambientCtx) return;
+  _ambientCtx = new AudioContext();
+
+  const master = _ambientCtx.createGain();
+  master.gain.setValueAtTime(0, _ambientCtx.currentTime);
+  master.gain.linearRampToValueAtTime(0.07, _ambientCtx.currentTime + 2.5);
+  master.connect(_ambientCtx.destination);
+
+  // C → Am → F → G chord loop (peaceful village pad)
+  const chords = [
+    [261.63, 329.63, 392.00],  // C major
+    [220.00, 261.63, 329.63],  // A minor
+    [174.61, 220.00, 261.63],  // F major
+    [196.00, 246.94, 293.66],  // G major
+  ];
+  let idx = 0;
+
+  function playChord() {
+    if (!_ambientCtx) return;
+    // fade out previous
+    _ambientOscs.forEach(o => { try { o.stop(_ambientCtx!.currentTime + 1.2); } catch {} });
+    _ambientOscs = [];
+
+    const chord = chords[idx % chords.length];
+    idx++;
+    chord.forEach((freq, i) => {
+      const osc = _ambientCtx!.createOscillator();
+      const g = _ambientCtx!.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq * (i === 0 ? 0.5 : 1); // bass note one octave down
+      const now = _ambientCtx!.currentTime;
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(i === 0 ? 0.28 : 0.20, now + 1.4);
+      g.gain.linearRampToValueAtTime(i === 0 ? 0.22 : 0.15, now + 4.5);
+      g.gain.linearRampToValueAtTime(0, now + 6.2);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(now);
+      osc.stop(now + 6.5);
+      _ambientOscs.push(osc);
+    });
+  }
+
+  playChord();
+  _ambientInterval = setInterval(playChord, 5000);
+}
+
+export function stopAmbientMusic() {
+  if (_ambientInterval) { clearInterval(_ambientInterval); _ambientInterval = null; }
+  _ambientOscs.forEach(o => { try { o.stop(); } catch {} });
+  _ambientOscs = [];
+  if (_ambientCtx) { _ambientCtx.close(); _ambientCtx = null; }
+}
+
 export const sounds = {
   click: playClick,
   pop: playPop,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nunito, Fredoka } from "next/font/google";
+import { SessionProvider } from "next-auth/react";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import "./globals.css";
 
@@ -30,7 +31,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${nunito.variable} ${fredoka.variable} antialiased`}>
-        <ConvexClientProvider>{children}</ConvexClientProvider>
+        <SessionProvider>
+          <ConvexClientProvider>{children}</ConvexClientProvider>
+        </SessionProvider>
       </body>
     </html>
   );

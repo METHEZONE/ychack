@@ -5,6 +5,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ANIMAL_EMOJI, ANIMAL_COLORS, AnimalType } from "@/lib/animals";
 import { STAGE_COLORS, VendorStage } from "@/lib/constants";
 import { playNPCArrival } from "@/lib/sounds";
+import { getSpriteSheet, SpriteSheet, SpriteFrame } from "@/lib/sprites";
+
+function SpriteDiv({ sheet, frameIdx, displayHeight, flip }: {
+  sheet: SpriteSheet; frameIdx: number; displayHeight: number; flip: boolean;
+}) {
+  const frame: SpriteFrame = sheet.frames[frameIdx] ?? sheet.frames[0];
+  const scale = displayHeight / frame.h;
+  return (
+    <div style={{
+      width: frame.w * scale,
+      height: displayHeight,
+      backgroundImage: `url('${sheet.src}')`,
+      backgroundPosition: `-${frame.x * scale}px -${frame.y * scale}px`,
+      backgroundSize: `${sheet.sheetW * scale}px ${sheet.sheetH * scale}px`,
+      backgroundRepeat: "no-repeat",
+      imageRendering: "pixelated",
+      transform: flip ? "scaleX(-1)" : undefined,
+      transformOrigin: "center",
+      display: "inline-block",
+    }} />
+  );
+}
 
 interface VendorDoc {
   _id: string;
@@ -21,6 +43,7 @@ interface NPCProps {
   spawnY: number; // % of container height
   index: number;
   isNearby?: boolean;
+  isMovingIn?: boolean;
   onClick: () => void;
 }
 
@@ -40,17 +63,21 @@ const MOVE_DURATION = 2.2;   // seconds
 const IDLE_MIN = 2500;        // ms
 const IDLE_MAX = 5000;        // ms
 
-export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, onClick }: NPCProps) {
+export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, isMovingIn = false, onClick }: NPCProps) {
   const animalType = vendor.animalType as AnimalType;
   const stage = vendor.stage as VendorStage;
   const emoji = ANIMAL_EMOJI[animalType] ?? "🐾";
   const color = ANIMAL_COLORS[animalType] ?? "#888";
   const stageColor = STAGE_COLORS[stage] ?? "#888";
+  const spriteSheet = getSpriteSheet(animalType);
+  // Sprite display height — gomi is taller proportionally
+  const SPRITE_H = animalType === "rabbit" ? 72 : 88;
 
   const [pos, setPos] = useState({ x: spawnX, y: spawnY });
   const [facingRight, setFacingRight] = useState(true);
   const [isWalking, setIsWalking] = useState(false);
   const [showBubble, setShowBubble] = useState(false);
+  const [spriteFrame, setSpriteFrame] = useState(0);
 
   const posRef = useRef({ x: spawnX, y: spawnY });
 
@@ -66,6 +93,19 @@ export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, onClick }
     const t = setTimeout(() => setShowBubble(false), 3000);
     return () => clearTimeout(t);
   }, [stage]);
+
+  // Sprite frame animation
+  useEffect(() => {
+    if (!spriteSheet) return;
+    if (isWalking) {
+      const iv = setInterval(() => setSpriteFrame(f => (f + 1) % 4), 155);
+      return () => clearInterval(iv);
+    } else {
+      // idle: subtle 2-frame bob between frame 0 and 1
+      const iv = setInterval(() => setSpriteFrame(f => f === 0 ? 1 : 0), 600);
+      return () => clearInterval(iv);
+    }
+  }, [isWalking, spriteSheet]);
 
   // Wandering loop
   useEffect(() => {
@@ -132,17 +172,23 @@ export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, onClick }
     <motion.div
       className="absolute flex flex-col items-center cursor-pointer"
       style={{ zIndex: 20 }}
-      // Position animation — smooth walk between coordinates
+      // Move-in: start from HQ center (50%, 50%), walk to spawn
+      initial={isMovingIn
+        ? { left: "calc(50% - 28px)", top: "calc(50% - 36px)", scale: 0, opacity: 0 }
+        : { scale: 0, opacity: 0 }
+      }
       animate={{
         left: `calc(${pos.x}% - 28px)`,
         top: `calc(${pos.y}% - 36px)`,
+        scale: 1,
+        opacity: 1,
       }}
       transition={{
-        left: { duration: MOVE_DURATION, ease: "easeInOut" },
-        top: { duration: MOVE_DURATION, ease: "easeInOut" },
+        left: { duration: isMovingIn ? 2.0 : MOVE_DURATION, ease: "easeInOut", delay: isMovingIn ? 0.3 : 0 },
+        top: { duration: isMovingIn ? 2.0 : MOVE_DURATION, ease: "easeInOut", delay: isMovingIn ? 0.3 : 0 },
+        scale: { type: "spring", stiffness: 400, damping: 20, delay: isMovingIn ? 0.1 : index * 0.1 },
+        opacity: { duration: 0.3, delay: isMovingIn ? 0.1 : index * 0.1 },
       }}
-      // Entrance spring (only on mount)
-      initial={{ scale: 0, opacity: 0 }}
       onClick={onClick}
     >
       {/* Entrance animation wrapper */}
@@ -150,7 +196,7 @@ export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, onClick }
         className="flex flex-col items-center relative"
         animate={{ scale: 1, opacity: 1 }}
         initial={{ scale: 0, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 400, damping: 20, delay: index * 0.1 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20, delay: isMovingIn ? 0.1 : index * 0.1 }}
       >
         {/* "Press E" indicator when player is nearby */}
         <AnimatePresence>
@@ -215,24 +261,36 @@ export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, onClick }
           style={{ background: stageColor }}
         />
 
-        {/* NPC emoji — walk vs idle animation + direction flip */}
+        {/* NPC character — sprite sheet or emoji fallback */}
         <motion.div
-          key={isWalking ? "walk" : "idle"}
-          animate={
-            isWalking
-              ? { y: [0, -5, 0, -5, 0], scaleX: facingRight ? 1 : -1 }
-              : { y: [0, -6, 0], scaleX: facingRight ? 1 : -1 }
-          }
-          transition={
-            isWalking
-              ? { y: { repeat: Infinity, duration: 0.38, ease: "easeInOut" }, scaleX: { duration: 0.15 } }
-              : { y: { repeat: Infinity, duration: 2.2, ease: "easeInOut" }, scaleX: { duration: 0.15 } }
-          }
-          whileHover={{ scale: 1.2, y: -8 }}
+          whileHover={{ scale: 1.15, y: -6 }}
           className="select-none"
-          style={{ fontSize: "3.25rem", display: "inline-block" }}
         >
-          {emoji}
+          {spriteSheet ? (
+            <SpriteDiv
+              sheet={spriteSheet}
+              frameIdx={spriteFrame}
+              displayHeight={SPRITE_H}
+              flip={!facingRight}
+            />
+          ) : (
+            <motion.span
+              key={isWalking ? "walk" : "idle"}
+              animate={
+                isWalking
+                  ? { y: [0, -5, 0, -5, 0], scaleX: facingRight ? 1 : -1 }
+                  : { y: [0, -6, 0], scaleX: facingRight ? 1 : -1 }
+              }
+              transition={
+                isWalking
+                  ? { y: { repeat: Infinity, duration: 0.38, ease: "easeInOut" }, scaleX: { duration: 0.15 } }
+                  : { y: { repeat: Infinity, duration: 2.2, ease: "easeInOut" }, scaleX: { duration: 0.15 } }
+              }
+              style={{ fontSize: "3.25rem", display: "inline-block" }}
+            >
+              {emoji}
+            </motion.span>
+          )}
         </motion.div>
 
         {/* Name badge */}
