@@ -65,6 +65,17 @@ export const forageForVendors = action({
     const existingVendors = await ctx.runQuery(api.vendors.listByUser, { userId: args.userId });
     const startIndex = existingVendors.length;
 
+    // Global vendor limit — stop if already at max
+    const slotsAvailable = MAX_VENDORS - startIndex;
+    if (slotsAvailable <= 0) {
+      await ctx.runMutation(api.chatMessages.create, {
+        userId: args.userId,
+        role: "agent",
+        content: `Your village is full! You already have ${MAX_VENDORS} vendor NPCs. 🏡`,
+      });
+      return;
+    }
+
     // 4. "Foraging..." status in chat
     await ctx.runMutation(api.chatMessages.create, {
       userId: args.userId,
@@ -108,8 +119,8 @@ export const forageForVendors = action({
       return;
     }
 
-    // 6. Limit to max vendors (one per animal type)
-    rawVendors = rawVendors.slice(0, MAX_VENDORS);
+    // 6. Limit to available slots (global max across all quests)
+    rawVendors = rawVendors.slice(0, slotsAvailable);
 
     // 7. Process all vendors in parallel
     const scaleInfo = productionScale ? `\n\nWe're looking to produce ${productionScale}${timeline ? ` with a timeline of ${timeline}` : ""}.` : "";
@@ -215,12 +226,38 @@ export const forageForVendors = action({
       }
     }
 
-    // 8. Final summary
+    // 9. Final summary
     await ctx.runMutation(api.chatMessages.create, {
       userId: args.userId,
       role: "agent",
       content: `All done! Found **${rawVendors.length} vendors** and reached out to all of them. Check your village — new neighbors moved in! 🎉`,
       choices: ["Show decision tree", "Negotiate with top vendor", "Find more vendors"],
     });
+  },
+});
+
+// ─── Auto-forage for all quests after onboarding ────────────────────────────
+// Sequentially runs forageForVendors for each quest, respecting MAX_VENDORS globally
+export const autoForageOnboarding = action({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const quests = await ctx.runQuery(api.quests.listByUser, { userId: args.userId });
+    if (quests.length === 0) return;
+
+    for (const quest of quests) {
+      // Check remaining slots before each forage
+      const vendors = await ctx.runQuery(api.vendors.listByUser, { userId: args.userId });
+      if (vendors.length >= MAX_VENDORS) break;
+
+      try {
+        await ctx.runAction(api.actions.forage.forageForVendors, {
+          userId: args.userId,
+          questId: quest._id,
+          searchQuery: quest.description,
+        });
+      } catch (e) {
+        console.warn(`Auto-forage failed for quest ${quest._id}:`, e);
+      }
+    }
   },
 });

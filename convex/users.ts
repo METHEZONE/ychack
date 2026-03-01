@@ -25,6 +25,14 @@ export const get = query({
   },
 });
 
+// List all users (admin/debug)
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("users").collect();
+  },
+});
+
 // Look up user by Google ID (for auto-login on return)
 export const getByGoogleId = query({
   args: { googleId: v.string() },
