@@ -222,79 +222,115 @@ Return ONLY valid JSON with this exact shape:
 });
 
 // ─── Scrape a company website + extract structured info ──────────────────────
-// Tavily extract (~1s) → Claude to structure the raw content (~1s) = ~2s total
+// Tavily extract (main + /contact + /about) → Claude structure → ~3s total
+// Never throws — always returns best-effort data
 export const scrapeAndAnalyzeWebsite = action({
   args: { url: v.string() },
   handler: async (_ctx, args) => {
-    if (!process.env.TAVILY_API_KEY) throw new Error("TAVILY_API_KEY not set");
+    // Fallback name from domain (e.g. "thezonebio.com" → "Thezonebio")
+    function nameFromUrl(url: string): string {
+      try {
+        return new URL(url).hostname
+          .replace(/^www\./, "")
+          .split(".")[0]
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+      } catch {
+        return "";
+      }
+    }
 
-    // Build URL list: main page + /contact + /about for better email discovery
     const base = args.url.replace(/\/+$/, "");
     const urls = [base, `${base}/contact`, `${base}/contact-us`, `${base}/about`];
 
-    // Step 1: Tavily extract — get raw page content from multiple pages
-    const extractRes = await fetch("https://api.tavily.com/extract", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: process.env.TAVILY_API_KEY,
-        urls,
-      }),
-    });
+    // Step 1: Tavily extract — scrape multiple pages in one call
+    // Partial failures (404s) are OK — Tavily returns successful ones in results[]
+    let allContent = "";
+    try {
+      if (!process.env.TAVILY_API_KEY) throw new Error("no key");
+      const extractRes = await fetch("https://api.tavily.com/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, urls }),
+      });
 
-    if (!extractRes.ok) throw new Error(`Tavily extract failed: ${extractRes.status}`);
-    const extractData = await extractRes.json() as {
-      results?: Array<{ url: string; raw_content: string }>;
-    };
+      if (extractRes.ok) {
+        const data = await extractRes.json() as {
+          results?: Array<{ url: string; raw_content: string }>;
+        };
+        allContent = (data.results ?? [])
+          .map((r) => r.raw_content)
+          .filter(Boolean)
+          .join("\n\n--- PAGE BREAK ---\n\n");
+      }
+    } catch {
+      // Tavily completely failed — fall through with empty content
+    }
 
-    // Combine all extracted content
-    const allContent = (extractData.results ?? [])
-      .map((r) => r.raw_content)
-      .filter(Boolean)
-      .join("\n\n---PAGE BREAK---\n\n");
+    // If we got nothing at all, return minimal fallback immediately
+    if (!allContent.trim()) {
+      return {
+        companyName: nameFromUrl(args.url),
+        description: "",
+        products: "",
+        location: null,
+        email: null,
+      };
+    }
 
-    if (!allContent) throw new Error("No content extracted from website");
-
-    // Step 2: Claude to structure the raw content
-    const prompt = `Extract company information from this website content. I scraped multiple pages (main, contact, about) to find contact details.
+    // Step 2: Claude structures the raw content
+    const prompt = `Extract company information from this website content.
+Multiple pages were scraped (homepage, contact, about) — use all of them.
 
 URL: ${args.url}
-Content:
 ---
 ${allContent.slice(0, 5000)}
 ---
 
-IMPORTANT: Look carefully for email addresses — they are often on contact or about pages. Check for mailto: links, "email us at", "contact@", "info@", "sales@", "hello@" patterns.
+Rules:
+- companyName: the official brand/company name (not a page title like "Contact Us")
+- description: 1-2 sentences about what they do and who they serve
+- products: their main products or services (brief list or phrase)
+- location: city, state or country — null if not found
+- email: any contact/sales/hello/info email you find — null if not found
+  (check mailto: links, "email us at X", "reach us at X" patterns)
 
-Return ONLY valid JSON:
-{
-  "companyName": "official company name",
-  "description": "1-2 sentence description of what they do and who they serve",
-  "products": "main products or services they offer",
-  "location": "city, state/country or null if not found",
-  "email": "contact email or null if not found"
-}`;
+Return ONLY this JSON (no markdown, no explanation):
+{"companyName":"...","description":"...","products":"...","location":null,"email":null}`;
 
-    const msg = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 512,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = (msg.content[0] as { type: string; text: string }).text;
     try {
+      const msg = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 512,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const text = (msg.content[0] as { type: string; text: string }).text;
       const match = text.match(/\{[\s\S]*\}/);
-      if (match) return JSON.parse(match[0]) as {
-        companyName: string;
-        description: string;
-        products: string;
-        location: string | null;
-        email: string | null;
-      };
+      if (match) {
+        const parsed = JSON.parse(match[0]) as {
+          companyName: string;
+          description: string;
+          products: string;
+          location: string | null;
+          email: string | null;
+        };
+        // Ensure companyName is never empty
+        if (!parsed.companyName) parsed.companyName = nameFromUrl(args.url);
+        return parsed;
+      }
     } catch {
-      console.error("Failed to parse website analysis:", text);
+      console.error("scrapeAndAnalyzeWebsite: Claude parse failed");
     }
-    return null;
+
+    // Claude failed — return what we can from the URL
+    return {
+      companyName: nameFromUrl(args.url),
+      description: "",
+      products: "",
+      location: null,
+      email: null,
+    };
   },
 });
 
