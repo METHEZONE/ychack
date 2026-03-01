@@ -34,8 +34,12 @@ export function CompanySetup({ onComplete }: CompanySetupProps) {
     if (!website.trim()) return;
     setError("");
     setStep("scraping");
+    // Normalize URL — add https:// if missing
+    const normalizedUrl = website.trim().match(/^https?:\/\//)
+      ? website.trim()
+      : `https://${website.trim()}`;
     try {
-      const result = await scrapeWebsite({ url: website });
+      const result = await scrapeWebsite({ url: normalizedUrl });
       setConfirmedName(result?.companyName ?? "");
       setConfirmedDesc(result?.description ?? result?.products ?? "");
       setStep("confirm");
@@ -48,10 +52,13 @@ export function CompanySetup({ onComplete }: CompanySetupProps) {
   }
 
   function handleConfirm() {
+    const normalizedUrl = website.trim().match(/^https?:\/\//)
+      ? website.trim()
+      : `https://${website.trim()}`;
     onComplete({
       companyName: confirmedName || undefined,
       companyDescription: confirmedDesc || undefined,
-      website,
+      website: normalizedUrl,
       isNewBusiness: false,
     });
   }
