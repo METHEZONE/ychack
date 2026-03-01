@@ -221,6 +221,71 @@ Return ONLY valid JSON with this exact shape:
   },
 });
 
+// ─── Scrape a company website + extract structured info ──────────────────────
+// Tavily extract (~1s) → Claude to structure the raw content (~1s) = ~2s total
+export const scrapeAndAnalyzeWebsite = action({
+  args: { url: v.string() },
+  handler: async (_ctx, args) => {
+    if (!process.env.TAVILY_API_KEY) throw new Error("TAVILY_API_KEY not set");
+
+    // Step 1: Tavily extract — get raw page content
+    const extractRes = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        urls: [args.url],
+      }),
+    });
+
+    if (!extractRes.ok) throw new Error(`Tavily extract failed: ${extractRes.status}`);
+    const extractData = await extractRes.json() as {
+      results?: Array<{ url: string; raw_content: string }>;
+    };
+    const rawContent = extractData.results?.[0]?.raw_content ?? "";
+    if (!rawContent) throw new Error("No content extracted from website");
+
+    // Step 2: Claude to structure the raw content
+    const prompt = `Extract company information from this website content.
+
+URL: ${args.url}
+Content:
+---
+${rawContent.slice(0, 3000)}
+---
+
+Return ONLY valid JSON:
+{
+  "companyName": "official company name",
+  "description": "1-2 sentence description of what they do and who they serve",
+  "products": "main products or services they offer",
+  "location": "city, state/country or null if not found",
+  "email": "contact email or null if not found"
+}`;
+
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = (msg.content[0] as { type: string; text: string }).text;
+    try {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) return JSON.parse(match[0]) as {
+        companyName: string;
+        description: string;
+        products: string;
+        location: string | null;
+        email: string | null;
+      };
+    } catch {
+      console.error("Failed to parse website analysis:", text);
+    }
+    return null;
+  },
+});
+
 export const analyzeProductNeed = action({
   args: {
     productIdea: v.string(),
