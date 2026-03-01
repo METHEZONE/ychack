@@ -61,7 +61,7 @@ const ALL_STEPS: CollectStep[] = [
   },
 ];
 
-export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) {
+export function GomiDataCollect({ onClose, isMandatory, returnVendorId }: GomiDataCollectProps) {
   const userId = useForageStore((s) => s.userId);
   const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
   const user = useQuery(api.users.get, userId ? { userId } : "skip");
@@ -113,7 +113,7 @@ export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) 
     setNeededSteps(missing);
 
     if (missing.length === 0) {
-      setPhase("agents");
+      setPhase(returnVendorId ? "done" : "agents");
     }
   }, [user]);
 
@@ -131,7 +131,9 @@ export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) 
 
   const getCurrentText = useCallback(() => {
     if (phase === "intro") {
-      return "Hey there! I'm Gomi, the village mayor. Before we deploy your agents, let me learn a bit about you and your business!";
+      return returnVendorId
+        ? "Hey! Looks like I need a few more details to reach out to this vendor. Let me ask you real quick!"
+        : "Hey there! I'm Gomi, the village mayor. Before we deploy your agents, let me learn a bit about you and your business!";
     }
     if (phase === "collecting" && neededSteps) {
       const step = neededSteps[stepIdx];
@@ -144,10 +146,12 @@ export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) 
       return "Deploying agents... They're heading out to forage for vendors now!";
     }
     if (phase === "done") {
-      return "Your agents are out foraging! They'll bring back vendors to your village soon. 🎉";
+      return returnVendorId
+        ? "All set! I've saved everything. Let's head back and try contacting that vendor again!"
+        : "Your agents are out foraging! They'll bring back vendors to your village soon. 🎉";
     }
     return "";
-  }, [phase, stepIdx, neededSteps, resolveGomiText]);
+  }, [phase, stepIdx, neededSteps, resolveGomiText, returnVendorId]);
 
   // Typewriter
   useEffect(() => {
@@ -192,7 +196,7 @@ export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) 
   function handleStartCollecting() {
     playClick();
     if (!neededSteps || neededSteps.length === 0) {
-      setPhase("agents");
+      setPhase(returnVendorId ? "done" : "agents");
     } else {
       setPhase("collecting");
       setStepIdx(0);
@@ -219,9 +223,15 @@ export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) 
         setStepIdx(stepIdx + 1);
         setInputValue("");
       } else {
-        // All questions done → go to agent checkboxes
         playChime();
-        setPhase("agents");
+        if (returnVendorId) {
+          // Came from vendor detail → skip agents, go straight to done
+          await updateCompanyData({ userId, gomiOnboardingDone: true });
+          setPhase("done");
+        } else {
+          // Normal onboarding → go to agent checkboxes
+          setPhase("agents");
+        }
       }
     } finally {
       setSaving(false);
@@ -560,7 +570,7 @@ export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) 
                   className="px-5 py-2.5 rounded-2xl text-sm font-extrabold"
                   style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
                 >
-                  Back to village
+                  {returnVendorId ? "Back to vendor" : "Back to village"}
                 </motion.button>
               </motion.div>
             )}

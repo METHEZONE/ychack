@@ -199,7 +199,13 @@ function VillagePageInner() {
           {gomiCollectOpen && (
             <GomiDataCollect
               key="gomi-collect"
-              onClose={() => setGomiCollectOpen(false)}
+              onClose={() => {
+                setGomiCollectOpen(false);
+                if (returnVendorId) {
+                  router.push(`/vendor/${returnVendorId}`);
+                  setReturnVendorId(null);
+                }
+              }}
               returnVendorId={returnVendorId}
               isMandatory={!onboardingDone}
             />
