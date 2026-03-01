@@ -51,6 +51,7 @@ interface VillageCanvasProps {
   onOpenHQ: () => void;
   onOpenGomiCollect: () => void;
   dialogueOpen: boolean;
+  userName?: string;
 }
 
 const SPEED = 0.38;
@@ -66,6 +67,7 @@ export function VillageCanvas({
   onOpenHQ,
   onOpenGomiCollect,
   dialogueOpen,
+  userName,
 }: VillageCanvasProps) {
   const userId = useForageStore((s) => s.userId);
 
@@ -286,6 +288,22 @@ export function VillageCanvas({
             <span style={{ fontSize: "2.4rem" }}>🙂</span>
           )}
         </div>
+        {/* Player name tag */}
+        <span
+          className="font-pixel truncate mt-1"
+          style={{
+            background: "var(--primary)",
+            color: "white",
+            border: "3px solid rgba(0,0,0,0.25)",
+            boxShadow: "0 3px 0 rgba(0,0,0,0.3)",
+            padding: "3px 8px",
+            fontSize: 7,
+            display: "inline-block",
+            maxWidth: 110,
+          }}
+        >
+          {(userName || "MILO").toUpperCase()}
+        </span>
         {(nearbyQuestId || nearbyHQ || nearMayor) && (
           <motion.div
             initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}

@@ -168,6 +168,7 @@ function VillagePageInner() {
           onOpenHQ={handleOpenHQ}
           onOpenGomiCollect={handleOpenGomiCollect}
           dialogueOpen={dialogueOpen}
+          userName={user?.name}
         />
 
         {/* HUD overlay */}
