@@ -139,6 +139,88 @@ If you want to present choices, include them AFTER your message like:
   },
 });
 
+// ─── Analyze a vendor's reply email ──────────────────────────────────────────
+// Extracts quote data + drafts a follow-up in one pass
+export const analyzeVendorReply = action({
+  args: {
+    vendorName: v.string(),
+    replyContent: v.string(),
+    originalQuery: v.string(),
+    senderCompanyName: v.string(), // our company
+    senderContactName: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    const prompt = `You are Forage's AI sourcing agent. A vendor just replied to our sourcing inquiry.
+
+Vendor: ${args.vendorName}
+What we're sourcing: ${args.originalQuery}
+Our company: ${args.senderCompanyName}
+Our contact: ${args.senderContactName}
+
+Vendor's reply:
+---
+${args.replyContent}
+---
+
+Do two things:
+
+1. Extract structured data from the reply (use null if not mentioned):
+{
+  "summary": "1-2 sentence summary of their reply",
+  "sentiment": "positive" | "neutral" | "negative" | "no_reply_needed",
+  "quote": {
+    "price": "e.g. $2.50/unit or null",
+    "moq": "e.g. 500 units or null",
+    "leadTime": "e.g. 4 weeks or null"
+  },
+  "keyPoints": ["point 1", "point 2"]
+}
+
+2. Write a short, professional follow-up reply (2-3 paragraphs).
+- If they gave a quote: acknowledge it, ask for a sample or next step
+- If they asked for more info: provide what they need
+- If negative/not a fit: thank them politely
+- Keep it warm and human, not salesy
+
+Return ONLY valid JSON with this exact shape:
+{
+  "summary": "...",
+  "sentiment": "...",
+  "quote": { "price": ..., "moq": ..., "leadTime": ... },
+  "keyPoints": [...],
+  "draftReply": "full email body here"
+}`;
+
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = (msg.content[0] as { type: string; text: string }).text;
+    try {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) return JSON.parse(match[0]) as {
+        summary: string;
+        sentiment: string;
+        quote: { price: string | null; moq: string | null; leadTime: string | null };
+        keyPoints: string[];
+        draftReply: string;
+      };
+    } catch {
+      console.error("Failed to parse vendor reply analysis:", text);
+    }
+    // Fallback
+    return {
+      summary: "Vendor replied — see full message.",
+      sentiment: "neutral",
+      quote: { price: null, moq: null, leadTime: null },
+      keyPoints: [],
+      draftReply: `Thank you for getting back to us! We're very interested in moving forward.\n\nCould you share more details about your pricing and minimum order quantities?\n\nBest,\n${args.senderContactName}\n${args.senderCompanyName}`,
+    };
+  },
+});
+
 export const analyzeProductNeed = action({
   args: {
     productIdea: v.string(),

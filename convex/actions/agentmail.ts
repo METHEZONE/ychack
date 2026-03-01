@@ -200,7 +200,9 @@ export const sendConfirmationEmail = action({
 });
 
 // ─── Webhook: handle inbound reply from a vendor ──────────────────────────────
-// Matches vendor via [ref:vendorId] in subject, falls back to inbox-based lookup
+// 1. Matches vendor via [ref:vendorId] in subject
+// 2. Runs Claude to analyze reply + draft follow-up
+// 3. Saves draft and notifies user for approval
 export const handleInboundEmail = action({
   args: {
     inboxId: v.string(),
@@ -209,14 +211,13 @@ export const handleInboundEmail = action({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Try to match via embedded vendorId ref in subject
+    // ── Resolve vendor ────────────────────────────────────────────────────────
     const vendorRef = parseVendorRef(args.subject);
     let resolvedId: Id<"vendors"> | null = null;
 
     if (vendorRef) {
       resolvedId = vendorRef as Id<"vendors">;
     } else {
-      // 2. Fallback: find by inbox
       const vendor = await ctx.runQuery(api.vendors.getByInboxId, { inboxId: args.inboxId });
       if (!vendor) {
         console.warn("Inbound email for unknown inbox:", args.inboxId);
@@ -225,7 +226,10 @@ export const handleInboundEmail = action({
       resolvedId = vendor._id;
     }
 
-    // Log inbound message
+    const vendor = await ctx.runQuery(api.vendors.get, { vendorId: resolvedId });
+    if (!vendor) return;
+
+    // ── Save inbound message ──────────────────────────────────────────────────
     await ctx.runMutation(api.messages.create, {
       vendorId: resolvedId,
       direction: "inbound",
@@ -236,10 +240,136 @@ export const handleInboundEmail = action({
       from: args.fromEmail,
     });
 
-    // Advance stage
     await ctx.runMutation(api.vendors.updateStage, {
       vendorId: resolvedId,
       stage: "replied",
     });
+
+    // ── Get user + quest context ──────────────────────────────────────────────
+    const user = await ctx.runQuery(api.users.get, { userId: vendor.userId });
+    const quest = await ctx.runQuery(api.quests.get, { questId: vendor.questId });
+    const contactName = user?.name ?? "Founder";
+    const companyName = user?.companyName ?? "Our Company";
+    const productNeed = quest?.description ?? "our product";
+
+    // ── Claude: analyze reply + draft follow-up ───────────────────────────────
+    let analysis: {
+      summary: string;
+      sentiment: string;
+      quote: { price: string | null; moq: string | null; leadTime: string | null };
+      keyPoints: string[];
+      draftReply: string;
+    };
+
+    try {
+      analysis = await ctx.runAction(api.actions.claude.analyzeVendorReply, {
+        vendorName: vendor.companyName,
+        replyContent: args.body,
+        originalQuery: productNeed,
+        senderCompanyName: companyName,
+        senderContactName: contactName,
+      });
+    } catch {
+      // Claude failed — still notify user, just no draft
+      await ctx.runMutation(api.chatMessages.create, {
+        userId: vendor.userId,
+        role: "agent",
+        content: `📨 **${vendor.companyName}** replied to your inquiry! Check the message thread.`,
+        choices: ["View messages", "Find more vendors"],
+      });
+      return;
+    }
+
+    // ── Save quote data if extracted ──────────────────────────────────────────
+    const hasQuote = analysis.quote.price || analysis.quote.moq || analysis.quote.leadTime;
+    if (hasQuote) {
+      await ctx.runMutation(api.vendors.updateStage, {
+        vendorId: resolvedId,
+        stage: "replied",
+        quote: {
+          price: analysis.quote.price ?? undefined,
+          moq: analysis.quote.moq ?? undefined,
+          leadTime: analysis.quote.leadTime ?? undefined,
+        },
+        agentNotes: analysis.summary,
+      });
+    }
+
+    // ── Save draft reply ──────────────────────────────────────────────────────
+    const draftSubject = args.subject.startsWith("Re:") ? args.subject : `Re: ${args.subject}`;
+    const draftMessageId = await ctx.runMutation(api.messages.create, {
+      vendorId: resolvedId,
+      direction: "outbound",
+      content: analysis.draftReply,
+      type: "email",
+      isDraft: true,
+      subject: draftSubject,
+    });
+
+    // ── Notify user with approval prompt ─────────────────────────────────────
+    const quoteText = hasQuote
+      ? `\n💰 Quote: ${[
+          analysis.quote.price && `Price: ${analysis.quote.price}`,
+          analysis.quote.moq && `MOQ: ${analysis.quote.moq}`,
+          analysis.quote.leadTime && `Lead time: ${analysis.quote.leadTime}`,
+        ].filter(Boolean).join(" · ")}`
+      : "";
+
+    const keyPointsText = analysis.keyPoints.length
+      ? `\n• ${analysis.keyPoints.join("\n• ")}`
+      : "";
+
+    await ctx.runMutation(api.chatMessages.create, {
+      userId: vendor.userId,
+      role: "agent",
+      content: `📨 **${vendor.companyName}** replied!\n\n${analysis.summary}${quoteText}${keyPointsText}\n\n---\n**Draft reply ready.** Want me to send it?`,
+      choices: ["Send reply ✓", "Edit first", "Skip for now"],
+      metadata: {
+        action: "approve_reply",
+        vendorId: resolvedId,
+        draftMessageId,
+        inboxId: vendor.agentmailInboxId,
+        toEmail: args.fromEmail,
+        subject: draftSubject,
+      },
+    });
+  },
+});
+
+// ─── Send a stored draft reply (called when user approves) ────────────────────
+export const sendDraftReply = action({
+  args: {
+    draftMessageId: v.id("messages"),
+    vendorId: v.id("vendors"),
+    toEmail: v.string(),
+    inboxId: v.string(),
+    subject: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const mail = getClient();
+
+    // Get draft content
+    const messages = await ctx.runQuery(api.messages.listByVendor, { vendorId: args.vendorId });
+    const draft = messages.find((m) => m._id === args.draftMessageId);
+    if (!draft || !draft.isDraft) throw new Error("Draft not found or already sent");
+
+    // Send
+    await mail.inboxes.messages.send(args.inboxId, {
+      to: [args.toEmail],
+      subject: subjectWithRef(args.subject, args.vendorId),
+      text: draft.content,
+    });
+
+    // Mark sent
+    await ctx.runMutation(api.messages.markSent, { messageId: args.draftMessageId });
+
+    // Advance vendor stage
+    await ctx.runMutation(api.vendors.updateStage, {
+      vendorId: args.vendorId,
+      stage: "negotiating",
+      emailSent: true,
+    });
+
+    return { sent: true };
   },
 });
