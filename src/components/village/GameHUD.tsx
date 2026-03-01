@@ -3,11 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
 import { setSoundEnabled, soundEnabled, playClick, playNotification } from "@/lib/sounds";
-import { Doc } from "../../../convex/_generated/dataModel";
+import { Doc, Id } from "../../../convex/_generated/dataModel";
 
 type VendorDoc = Doc<"vendors">;
 
@@ -24,7 +24,10 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showWASD, setShowWASD] = useState(true);
   const [bellShaking, setBellShaking] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const prevUnreadRef = useRef(0);
+  const nukeUserData = useMutation(api.users.nukeUserData);
 
   const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
 
@@ -185,6 +188,60 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
                 <span>🚪</span>
                 <span style={{ fontSize: 7 }}>EXIT VILLAGE</span>
               </button>
+
+              {/* ── Reset Account ── */}
+              {!resetConfirm ? (
+                <button
+                  className="pixel-btn flex items-center gap-2 w-full px-3 py-2 text-left"
+                  style={{ background: "#5a1a1a", borderColor: "#3a0808", boxShadow: "0 4px 0 #1a0404", opacity: 0.85 }}
+                  onClick={() => { playClick(); setResetConfirm(true); }}
+                >
+                  <span>🗑️</span>
+                  <span style={{ fontSize: 7 }}>RESET ACCOUNT</span>
+                </button>
+              ) : (
+                <div
+                  className="pixel-panel"
+                  style={{ background: "#3a0808", border: "2px solid #7f1d1d", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}
+                >
+                  <div className="font-pixel" style={{ fontSize: 7, color: "#fca5a5", textAlign: "center" }}>
+                    ⚠️ DELETE ALL DATA?
+                  </div>
+                  <div className="font-pixel" style={{ fontSize: 6, color: "#fca5a5", textAlign: "center", opacity: 0.8 }}>
+                    Vendors, quests, messages all gone.
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      className="pixel-btn"
+                      style={{ flex: 1, fontSize: 7, background: "#8b2020", borderColor: "#4a0f0f", boxShadow: "0 3px 0 #2d0808", opacity: resetting ? 0.6 : 1 }}
+                      disabled={resetting}
+                      onClick={async () => {
+                        if (!userId) return;
+                        setResetting(true);
+                        playClick();
+                        try {
+                          await nukeUserData({ userId: userId as Id<"users"> });
+                          localStorage.clear();
+                          await fetch("/api/auth/local-session", { method: "DELETE" }).catch(() => {});
+                          router.push("/");
+                        } catch {
+                          setResetting(false);
+                          setResetConfirm(false);
+                        }
+                      }}
+                    >
+                      {resetting ? "..." : "YES, RESET"}
+                    </button>
+                    <button
+                      className="pixel-btn"
+                      style={{ flex: 1, fontSize: 7 }}
+                      onClick={() => { playClick(); setResetConfirm(false); }}
+                    >
+                      CANCEL
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
