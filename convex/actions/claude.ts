@@ -3,13 +3,6 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import Anthropic from "@anthropic-ai/sdk";
-import { Laminar } from "@lmnr-ai/lmnr";
-
-// Initialize Laminar once at module level — auto-instruments all Anthropic calls
-Laminar.initialize({
-  projectApiKey: process.env.LMNR_PROJECT_API_KEY,
-});
-
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
