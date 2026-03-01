@@ -12,6 +12,7 @@ export const create = mutation({
     characterName: v.string(),
     positionX: v.optional(v.number()),
     positionY: v.optional(v.number()),
+    contactEmail: v.optional(v.string()),
     category: v.optional(v.union(
       v.literal("manufacturing"),
       v.literal("ingredients"),

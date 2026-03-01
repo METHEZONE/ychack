@@ -42,10 +42,47 @@ export function ChatBar() {
   const createMessage = useMutation(api.chatMessages.create);
   const generateResponse = useAction(api.actions.claude.generateChatResponse);
   const forageVendors = useAction(api.actions.forage.forageForVendors);
+  const sendDraftReply = useAction(api.actions.agentmail.sendDraftReply);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  async function handleChoiceSelect(choice: string, metadata?: Record<string, unknown>) {
+    if (!userId) return;
+
+    // approve_reply: send the draft without going through the normal chat flow
+    if (metadata?.action === "approve_reply" && choice === "Send reply ✓") {
+      setAgentBusy(true, "Sending reply...");
+      try {
+        await sendDraftReply({
+          draftMessageId: metadata.draftMessageId as Parameters<typeof sendDraftReply>[0]["draftMessageId"],
+          vendorId: metadata.vendorId as Parameters<typeof sendDraftReply>[0]["vendorId"],
+          toEmail: metadata.toEmail as string,
+          inboxId: metadata.inboxId as string,
+          subject: metadata.subject as string,
+        });
+        await createMessage({
+          userId,
+          role: "agent",
+          content: "✅ Reply sent! I'll let you know when they respond again.",
+        });
+        playChime();
+      } catch {
+        await createMessage({
+          userId,
+          role: "agent",
+          content: "❌ Failed to send reply. Try again from the message thread.",
+        });
+      } finally {
+        setAgentBusy(false);
+      }
+      return;
+    }
+
+    // Default: treat choice as a chat message
+    await handleSend(choice);
+  }
 
   async function handleSend(text?: string) {
     const content = text ?? input.trim();
@@ -164,7 +201,8 @@ export function ChatBar() {
                     role={msg.role as "user" | "agent"}
                     content={msg.content}
                     choices={msg.choices}
-                    onChoiceSelect={(choice) => handleSend(choice)}
+                    metadata={msg.metadata as Record<string, unknown> | undefined}
+                    onChoiceSelect={handleChoiceSelect}
                     isLatest={i === messages.length - 1}
                   />
                 ))

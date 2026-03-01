@@ -6,11 +6,12 @@ interface ChatMessageProps {
   role: "user" | "agent";
   content: string;
   choices?: string[];
-  onChoiceSelect?: (choice: string) => void;
+  metadata?: Record<string, unknown>;
+  onChoiceSelect?: (choice: string, metadata?: Record<string, unknown>) => void;
   isLatest?: boolean;
 }
 
-export function ChatMessage({ role, content, choices, onChoiceSelect, isLatest }: ChatMessageProps) {
+export function ChatMessage({ role, content, choices, metadata, onChoiceSelect, isLatest }: ChatMessageProps) {
   const isAgent = role === "agent";
 
   return (
@@ -53,7 +54,7 @@ export function ChatMessage({ role, content, choices, onChoiceSelect, isLatest }
           )}
         </div>
         {choices && choices.length > 0 && isAgent && (
-          <ChoiceButtons choices={choices} onSelect={onChoiceSelect} />
+          <ChoiceButtons choices={choices} onSelect={(choice) => onChoiceSelect?.(choice, metadata)} />
         )}
       </div>
     </div>

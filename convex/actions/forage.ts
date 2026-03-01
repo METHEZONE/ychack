@@ -129,6 +129,7 @@ export const forageForVendors = action({
           companyName: raw.companyName,
           website: raw.website ?? undefined,
           location: raw.location ?? undefined,
+          contactEmail: raw.contactEmail ?? undefined,
           animalType,
           characterName,
           category,
