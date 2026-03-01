@@ -198,7 +198,6 @@ function VillagePageInner() {
           <GomiDataCollect
             key="gomi-collect"
             onClose={() => setGomiCollectOpen(false)}
-            returnVendorId={returnVendorId}
             isMandatory={!onboardingDone}
           />
         )}

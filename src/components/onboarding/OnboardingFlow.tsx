@@ -214,8 +214,6 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
   const updateCompany = useMutation(api.users.updateCompanyData);
   const setGoogleId  = useMutation(api.users.setGoogleId);
   const setSessionToken = useMutation(api.users.setSessionToken);
-  const updatePrefs  = useMutation(api.users.updatePreferences);
-  const createQuest  = useMutation(api.quests.create);
   const scrapeWebsite = useAction(api.actions.browserUse.scrapeWebsite);
   const analyzeProduct = useAction(api.actions.claude.analyzeProductNeed);
 
@@ -261,21 +259,12 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
       });
     } catch { /* non-critical */ }
 
-    let firstQuestId = null;
-    for (const need of needs) {
-      const qId = await createQuest({ userId, description: need.searchQuery || `Find ${need.category} vendors` });
-      if (!firstQuestId) firstQuestId = qId;
-    }
-
-    // Save activeQuestId to DB
-    if (firstQuestId) {
-      await updatePrefs({ userId, activeQuestId: firstQuestId });
-    }
+    // Quests are created later in Gomi onboarding (village entry)
 
     localStorage.setItem(LS_USER_ID, userId);
     localStorage.removeItem("forage_pending_onboard");
     setUserId(userId);
-    if (firstQuestId) setActiveQuestId(firstQuestId);
+
     return userId;
   }
 
@@ -563,7 +552,12 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
                             playClick();
                             setSelectedNeedIdxs(prev => {
                               const next = new Set(prev);
-                              if (next.has(i)) next.delete(i); else next.add(i);
+                              if (next.has(i)) {
+                                next.delete(i);
+                              } else if (next.size < 4) {
+                                // Max 4 selections (one per animal type)
+                                next.add(i);
+                              }
                               return next;
                             });
                           }}

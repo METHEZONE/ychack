@@ -2,15 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
 import { playDialogueBlip, playChime, playClick } from "@/lib/sounds";
+import { ANIMAL_EMOJI, ANIMAL_COLORS, ANIMAL_TYPES, AnimalType, assignAnimal } from "@/lib/animals";
+import { Id } from "../../../convex/_generated/dataModel";
 
 interface GomiDataCollectProps {
   onClose: () => void;
-  returnVendorId?: string | null;
   isMandatory?: boolean;
 }
 
@@ -60,34 +60,47 @@ const ALL_STEPS: CollectStep[] = [
   },
 ];
 
-export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDataCollectProps) {
-  const router = useRouter();
+export function GomiDataCollect({ onClose, isMandatory }: GomiDataCollectProps) {
   const userId = useForageStore((s) => s.userId);
+  const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
   const user = useQuery(api.users.get, userId ? { userId } : "skip");
   const updateCompanyData = useMutation(api.users.updateCompanyData);
+  const createQuest = useMutation(api.quests.create);
+  const updatePrefs = useMutation(api.users.updatePreferences);
+  const autoForage = useAction(api.actions.forage.autoForageOnboarding);
 
-  const [phase, setPhase] = useState<"intro" | "collecting" | "done">("intro");
+  const [phase, setPhase] = useState<"intro" | "collecting" | "agents" | "deploying" | "done">("intro");
   const [stepIdx, setStepIdx] = useState(0);
   const [inputValue, setInputValue] = useState("");
   const [displayText, setDisplayText] = useState("");
   const [textDone, setTextDone] = useState(false);
   const [saving, setSaving] = useState(false);
-  // Track answers collected this session (for dynamic gomiText like {name})
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [selectedNeedIdxs, setSelectedNeedIdxs] = useState<Set<number>>(new Set());
   const typeIndexRef = useRef(0);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-  // Determine which steps are needed (skip already-filled fields)
-  const [neededSteps, setNeededSteps] = useState<CollectStep[]>([]);
+  // Build agent list from user.needs (saved during pre-login onboarding)
+  const agentOptions = (user?.needs ?? []).slice(0, ANIMAL_TYPES.length).map((category, i) => {
+    const { animalType, characterName } = assignAnimal(i);
+    return { category, animalType: animalType as AnimalType, characterName, index: i };
+  });
+
+  // Calculate needed steps ONCE on initial load
+  const [neededSteps, setNeededSteps] = useState<CollectStep[] | null>(null);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (user === undefined) return; // loading
+    if (initializedRef.current) return;
+    if (user === undefined) return;
+
+    initializedRef.current = true;
+
     const missing = ALL_STEPS.filter((step) => {
       const val = user?.[step.key as keyof typeof user];
       return !val || (typeof val === "string" && val.trim() === "");
     });
-    setNeededSteps(missing);
-    // Seed answers with existing user data
+
     const existing: Record<string, string> = {};
     for (const step of ALL_STEPS) {
       const val = user?.[step.key as keyof typeof user];
@@ -96,30 +109,46 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
       }
     }
     setAnswers(existing);
+    setNeededSteps(missing);
+
     if (missing.length === 0) {
-      setPhase("done");
+      setPhase("agents");
     }
   }, [user]);
 
-  // Resolve gomiText (static or dynamic)
+  // Auto-select all agents on load
+  useEffect(() => {
+    if (agentOptions.length > 0 && selectedNeedIdxs.size === 0) {
+      setSelectedNeedIdxs(new Set(agentOptions.map((_, i) => i)));
+    }
+  }, [agentOptions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const resolveGomiText = useCallback((step: CollectStep) => {
     if (typeof step.gomiText === "function") return step.gomiText(answers);
     return step.gomiText;
   }, [answers]);
 
-  // Get current text to display
   const getCurrentText = useCallback(() => {
     if (phase === "intro") {
-      return "Hey there! I'm Gomi, the village mayor. Before you reach out to vendors, let me learn a bit about you and your business. It'll only take a moment!";
+      return "Hey there! I'm Gomi, the village mayor. Before we deploy your agents, let me learn a bit about you and your business!";
+    }
+    if (phase === "collecting" && neededSteps) {
+      const step = neededSteps[stepIdx];
+      return step ? resolveGomiText(step) : "";
+    }
+    if (phase === "agents") {
+      return "Here are your agents ready to forage! Check the ones you'd like to deploy:";
+    }
+    if (phase === "deploying") {
+      return "Deploying agents... They're heading out to forage for vendors now!";
     }
     if (phase === "done") {
-      return "You're all set! I've got everything I need. Let's build your village! 🎉";
+      return "Your agents are out foraging! They'll bring back vendors to your village soon. 🎉";
     }
-    const step = neededSteps[stepIdx];
-    return step ? resolveGomiText(step) : "";
+    return "";
   }, [phase, stepIdx, neededSteps, resolveGomiText]);
 
-  // Typewriter effect
+  // Typewriter
   useEffect(() => {
     const fullText = getCurrentText();
     if (!fullText) return;
@@ -143,7 +172,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
     return () => clearInterval(iv);
   }, [phase, stepIdx, getCurrentText]);
 
-  // Auto-focus input when typewriter finishes
+  // Auto-focus input
   useEffect(() => {
     if (textDone && phase === "collecting" && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -161,8 +190,8 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
 
   function handleStartCollecting() {
     playClick();
-    if (neededSteps.length === 0) {
-      setPhase("done");
+    if (!neededSteps || neededSteps.length === 0) {
+      setPhase("agents");
     } else {
       setPhase("collecting");
       setStepIdx(0);
@@ -171,43 +200,81 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
   }
 
   async function handleSubmitStep() {
-    if (!userId || !inputValue.trim()) return;
+    if (!userId || !inputValue.trim() || !neededSteps) return;
     const step = neededSteps[stepIdx];
     if (!step) return;
 
     playClick();
     setSaving(true);
     try {
-      // Track answer for dynamic text interpolation
       setAnswers((prev) => ({ ...prev, [step.key]: inputValue.trim() }));
-
-      const isLastStep = stepIdx >= neededSteps.length - 1;
 
       await updateCompanyData({
         userId,
         [step.key]: inputValue.trim(),
-        ...(isLastStep ? { gomiOnboardingDone: true } : {}),
       });
 
-      if (!isLastStep) {
+      if (stepIdx < neededSteps.length - 1) {
         setStepIdx(stepIdx + 1);
         setInputValue("");
       } else {
+        // All questions done → go to agent checkboxes
         playChime();
-        setPhase("done");
+        setPhase("agents");
       }
     } finally {
       setSaving(false);
     }
   }
 
+  function toggleAgent(idx: number) {
+    playClick();
+    setSelectedNeedIdxs((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  async function handleDeploy() {
+    if (!userId) return;
+    playClick();
+    setPhase("deploying");
+    try {
+      // Create quests for selected agents
+      const selected = agentOptions.filter((_, i) => selectedNeedIdxs.has(i));
+      let firstQuestId: Id<"quests"> | null = null;
+      for (const agent of selected) {
+        const qId = await createQuest({
+          userId,
+          description: `Find ${agent.category} vendors`,
+          animalType: agent.animalType,
+          characterName: agent.characterName,
+        });
+        if (!firstQuestId) firstQuestId = qId;
+      }
+
+      if (firstQuestId) {
+        await updatePrefs({ userId, activeQuestId: firstQuestId });
+        setActiveQuestId(firstQuestId);
+      }
+
+      await updateCompanyData({ userId, gomiOnboardingDone: true });
+
+      // Fire-and-forget auto-forage
+      autoForage({ userId }).catch(() => {});
+
+      playChime();
+      setPhase("done");
+    } catch {
+      setPhase("done");
+    }
+  }
+
   function handleDone() {
     playClick();
-    if (returnVendorId) {
-      router.push(`/vendor/${returnVendorId}`);
-    } else {
-      onClose();
-    }
+    onClose();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -217,12 +284,13 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
     }
   }
 
-  const currentStep = neededSteps[stepIdx];
-  const progress = neededSteps.length > 0
-    ? phase === "done"
-      ? 100
-      : Math.round(((stepIdx) / neededSteps.length) * 100)
-    : 100;
+  const currentStep = neededSteps?.[stepIdx];
+  const totalSteps = (neededSteps?.length ?? 0) + 1; // +1 for agents step
+  const currentProgress = phase === "collecting"
+    ? Math.round((stepIdx / totalSteps) * 100)
+    : phase === "agents"
+      ? Math.round(((neededSteps?.length ?? 0) / totalSteps) * 100)
+      : 100;
 
   return (
     <motion.div
@@ -241,18 +309,18 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
       onClick={skipTypewriter}
     >
       {/* Progress bar */}
-      {phase === "collecting" && neededSteps.length > 0 && (
+      {(phase === "collecting" || phase === "agents") && (
         <div className="px-5 pt-3">
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border-game)" }}>
             <motion.div
               className="h-full rounded-full"
               style={{ background: "var(--primary)" }}
-              animate={{ width: `${progress}%` }}
+              animate={{ width: `${currentProgress}%` }}
               transition={{ duration: 0.3 }}
             />
           </div>
           <div className="text-xs font-bold mt-1 text-right" style={{ color: "var(--muted)" }}>
-            {stepIdx + 1} / {neededSteps.length}
+            {phase === "collecting" ? `${stepIdx + 1} / ${totalSteps}` : `${totalSteps} / ${totalSteps}`}
           </div>
         </div>
       )}
@@ -282,7 +350,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
           </div>
         </div>
 
-        {/* Dialogue content */}
+        {/* Dialogue */}
         <div className="flex-1 min-w-0">
           <div
             className="text-sm font-semibold leading-relaxed mb-3 min-h-[48px]"
@@ -295,7 +363,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
           </div>
 
           <AnimatePresence mode="wait">
-            {/* Intro → Start button */}
+            {/* Intro */}
             {phase === "intro" && textDone && (
               <motion.div
                 key="intro-btn"
@@ -327,7 +395,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
               </motion.div>
             )}
 
-            {/* Collecting → Input field */}
+            {/* Collecting */}
             {phase === "collecting" && textDone && currentStep && (
               <motion.div
                 key={`step-${stepIdx}`}
@@ -346,11 +414,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
                     placeholder={currentStep.placeholder}
                     rows={3}
                     className="w-full text-sm leading-relaxed p-3 rounded-2xl outline-none resize-none font-semibold"
-                    style={{
-                      background: "var(--panel)",
-                      border: "2.5px solid var(--border-game)",
-                      color: "var(--text)",
-                    }}
+                    style={{ background: "var(--panel)", border: "2.5px solid var(--border-game)", color: "var(--text)" }}
                   />
                 ) : (
                   <input
@@ -361,11 +425,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
                     onKeyDown={handleKeyDown}
                     placeholder={currentStep.placeholder}
                     className="w-full text-sm p-3 rounded-2xl outline-none font-semibold"
-                    style={{
-                      background: "var(--panel)",
-                      border: "2.5px solid var(--border-game)",
-                      color: "var(--text)",
-                    }}
+                    style={{ background: "var(--panel)", border: "2.5px solid var(--border-game)", color: "var(--text)" }}
                   />
                 )}
                 <div className="flex gap-2">
@@ -377,7 +437,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
                     className="px-5 py-2 rounded-2xl text-sm font-extrabold disabled:opacity-50"
                     style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
                   >
-                    {saving ? "Saving..." : stepIdx < neededSteps.length - 1 ? "Next →" : "Done!"}
+                    {saving ? "Saving..." : "Next →"}
                   </motion.button>
                   {stepIdx > 0 && (
                     <motion.button
@@ -394,6 +454,96 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
               </motion.div>
             )}
 
+            {/* Agents checkboxes */}
+            {phase === "agents" && textDone && (
+              <motion.div
+                key="agents"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col gap-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {agentOptions.map((agent, i) => {
+                  const emoji = ANIMAL_EMOJI[agent.animalType] ?? "🐾";
+                  const color = ANIMAL_COLORS[agent.animalType] ?? "#888";
+                  const checked = selectedNeedIdxs.has(i);
+
+                  return (
+                    <motion.button
+                      key={i}
+                      onClick={() => toggleAgent(i)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left w-full"
+                      style={{
+                        background: checked ? `${color}18` : "var(--panel)",
+                        border: `2.5px solid ${checked ? color : "var(--border-game)"}`,
+                        transition: "border-color 0.15s, background 0.15s",
+                      }}
+                    >
+                      <div
+                        className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-xs font-black"
+                        style={{
+                          background: checked ? color : "var(--panel)",
+                          border: `2px solid ${checked ? color : "var(--border-game)"}`,
+                          color: "white",
+                        }}
+                      >
+                        {checked ? "✓" : ""}
+                      </div>
+                      <span className="text-2xl flex-shrink-0">{emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-extrabold truncate" style={{ color: "var(--text)" }}>
+                          {agent.characterName}
+                        </div>
+                        <div className="text-xs font-semibold truncate" style={{ color: "var(--muted)" }}>
+                          Find {agent.category} vendors
+                        </div>
+                      </div>
+                    </motion.button>
+                  );
+                })}
+
+                {agentOptions.length === 0 && (
+                  <div className="text-sm font-semibold py-2" style={{ color: "var(--muted)" }}>
+                    No agents selected during setup.
+                  </div>
+                )}
+
+                <motion.button
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={handleDeploy}
+                  disabled={selectedNeedIdxs.size === 0}
+                  className="px-5 py-2.5 rounded-2xl text-sm font-extrabold disabled:opacity-50 mt-1"
+                  style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
+                >
+                  Deploy {selectedNeedIdxs.size} agent{selectedNeedIdxs.size !== 1 ? "s" : ""} 🌿
+                </motion.button>
+              </motion.div>
+            )}
+
+            {/* Deploying */}
+            {phase === "deploying" && (
+              <motion.div
+                key="deploying"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-2 py-2"
+              >
+                <motion.span
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  className="text-xl"
+                >🌿</motion.span>
+                <span className="text-sm font-bold" style={{ color: "var(--muted)" }}>
+                  Sending agents out...
+                </span>
+              </motion.div>
+            )}
+
             {/* Done */}
             {phase === "done" && textDone && (
               <motion.div
@@ -401,7 +551,6 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="flex gap-2"
               >
                 <motion.button
                   whileHover={{ scale: 1.04 }}
@@ -410,7 +559,7 @@ export function GomiDataCollect({ onClose, returnVendorId, isMandatory }: GomiDa
                   className="px-5 py-2.5 rounded-2xl text-sm font-extrabold"
                   style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
                 >
-                  {returnVendorId ? "← Back to vendor" : "Back to village"}
+                  Back to village
                 </motion.button>
               </motion.div>
             )}
