@@ -56,12 +56,63 @@ export const GOMI: SpriteSheet = {
   ],
 };
 
+// deer.png — Deer (1563×1563), 2 rows × 4 frames (sprite6 is blank, skipped)
+export const DEER: SpriteSheet = {
+  src: "/assets/deer.png",
+  sheetW: 1563, sheetH: 1563,
+  frames: [
+    { x: 505, y: 410, w: 162, h: 323 }, // 0 — idle / walk A
+    { x: 883, y: 415, w: 162, h: 323 }, // 1 — walk B
+    { x: 128, y: 416, w: 161, h: 320 }, // 2 — walk C
+    { x: 1260, y: 418, w: 162, h: 320 }, // 3 — walk D
+    { x: 501, y: 801, w: 162, h: 318 }, // 4 — walk E
+    { x: 124, y: 806, w: 164, h: 312 }, // 5 — walk F
+    { x: 885, y: 807, w: 163, h: 312 }, // 6 — walk G
+    { x: 1260, y: 807, w: 162, h: 312 }, // 7 — walk H
+  ],
+};
+
+// milo.png — Milo (1563×1563), 2 rows × 4 frames, frame 0 is larger portrait
+export const MILO: SpriteSheet = {
+  src: "/assets/milo.png",
+  sheetW: 1563, sheetH: 1563,
+  frames: [
+    { x: 461, y: 385, w: 306, h: 456 }, // 0 — portrait / idle (wider)
+    { x: 833, y: 385, w: 252, h: 461 }, // 1 — walk A
+    { x: 1139, y: 390, w: 253, h: 454 }, // 2 — walk B
+    { x: 157, y: 391, w: 250, h: 449 }, // 3 — walk C
+    { x: 852, y: 996, w: 242, h: 462 }, // 4 — walk D
+    { x: 1158, y: 996, w: 243, h: 461 }, // 5 — walk E
+    { x: 140, y: 997, w: 263, h: 464 }, // 6 — walk F
+    { x: 523, y: 997, w: 256, h: 463 }, // 7 — walk G
+  ],
+};
+
+// lion.png — Lion (2048×2048), frame 0 is large portrait, frames 1-7 are walk cycle
+export const LION: SpriteSheet = {
+  src: "/assets/lion.png",
+  sheetW: 2048, sheetH: 2048,
+  frames: [
+    { x: 1500, y: 0, w: 548, h: 966 }, // 0 — large portrait
+    { x: 663, y: 580, w: 206, h: 380 }, // 1 — walk A
+    { x: 168, y: 582, w: 205, h: 383 }, // 2 — walk B
+    { x: 1161, y: 586, w: 204, h: 381 }, // 3 — walk C
+    { x: 663, y: 1093, w: 202, h: 374 }, // 4 — walk D
+    { x: 167, y: 1096, w: 205, h: 369 }, // 5 — walk E
+    { x: 1162, y: 1097, w: 204, h: 368 }, // 6 — walk F
+    { x: 1653, y: 1100, w: 204, h: 366 }, // 7 — walk G
+  ],
+};
+
 export function getSpriteSheet(animalType: string): SpriteSheet | null {
   switch (animalType) {
     case "fox": return FOXI;
     case "rabbit": return RABI;
     case "bear":
     case "raccoon": return GOMI;
+    case "deer": return DEER;
+    case "milo": return MILO;
+    case "lion": return LION;
     default: return null;
   }
 }

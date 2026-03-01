@@ -4,17 +4,17 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
 import { LS_USER_ID } from "@/lib/constants";
-import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
+import { OnboardingFlow, PendingOnboardData } from "@/components/onboarding/OnboardingFlow";
 import { playChime, playClick, startAmbientMusic } from "@/lib/sounds";
 import { getSpriteSheet } from "@/lib/sprites";
 
-type PageMode = "loading" | "title" | "menu" | "onboarding";
+type PageMode = "loading" | "title" | "onboarding";
 
 const DEMO_NAMES = ["Alex", "Sam", "Jordan", "Casey", "Morgan", "Riley"];
 
@@ -163,29 +163,27 @@ export default function Home() {
   const [showAbout, setShowAbout] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [musicStarted, setMusicStarted] = useState(false);
+  const [pendingData, setPendingData] = useState<PendingOnboardData | null>(null);
 
   const createUser = useMutation(api.users.create);
   const seedDemo = useMutation(api.demo.seedDemoVendors);
 
-  // Auth + routing check
+  // Routing — always show title first. Google OAuth return → onboarding with pending data.
   useEffect(() => {
     if (status === "loading") return;
     initFromLocalStorage();
-    const savedId = localStorage.getItem(LS_USER_ID);
-
-    if (savedId) {
-      setUserId(savedId as Parameters<typeof setUserId>[0]);
-      router.replace("/village");
-      return;
-    }
 
     if (session?.user) {
-      // Returning from Google OAuth → skip title, go to onboarding
+      // Returning from Google OAuth — recover pending onboarding data
+      const raw = localStorage.getItem("forage_pending_onboard");
+      if (raw) {
+        try { setPendingData(JSON.parse(raw) as PendingOnboardData); } catch { /* ignore */ }
+      }
       setMode("onboarding");
     } else {
       setMode("title");
     }
-  }, [status, session, router, setUserId, initFromLocalStorage]);
+  }, [status, session, initFromLocalStorage]);
 
   const triggerMusic = useCallback(() => {
     if (!musicStarted) {
@@ -194,12 +192,12 @@ export default function Home() {
     }
   }, [musicStarted]);
 
-  // Title screen: any key → menu
+  // Title screen: any key → onboarding
   const handleTitleInteract = useCallback(() => {
     if (mode !== "title") return;
     triggerMusic();
     playClick();
-    setMode("menu");
+    setMode("onboarding");
   }, [mode, triggerMusic]);
 
   useEffect(() => {
@@ -244,21 +242,24 @@ export default function Home() {
     );
   }
 
-  // Onboarding (after Google auth)
+  // Onboarding
   if (mode === "onboarding") {
     return (
       <main className="w-full h-screen overflow-hidden">
-        <OnboardingFlow googleUser={session?.user ?? null} />
+        <OnboardingFlow
+          googleUser={session?.user ?? null}
+          pendingData={pendingData}
+        />
       </main>
     );
   }
 
-  // Title + Menu (both on background.png)
+  // Title screen
   return (
     <div
       className="w-full h-screen relative overflow-hidden"
-      onClick={mode === "title" ? handleTitleInteract : undefined}
-      style={{ cursor: mode === "title" ? "pointer" : "default" }}
+      onClick={handleTitleInteract}
+      style={{ cursor: "pointer" }}
     >
       {/* Pixel art background */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -270,15 +271,12 @@ export default function Home() {
         draggable={false}
       />
 
-      {/* Overlay — darker in title, slightly darker in menu */}
+      {/* Overlay */}
       <div
         className="absolute inset-0"
         style={{
-          background: mode === "title"
-            ? "linear-gradient(to bottom, rgba(10,20,10,0.52) 0%, rgba(10,20,10,0.18) 45%, rgba(10,20,10,0.62) 100%)"
-            : "rgba(10,20,10,0.62)",
+          background: "linear-gradient(to bottom, rgba(10,20,10,0.52) 0%, rgba(10,20,10,0.18) 45%, rgba(10,20,10,0.62) 100%)",
           zIndex: 1,
-          transition: "background 0.5s",
         }}
       />
 
@@ -303,8 +301,8 @@ export default function Home() {
         </div>
       </motion.div>
 
-      {/* Decorative walking sprite on title */}
-      {mode === "title" && <TitleSprite />}
+      {/* Decorative walking sprite */}
+      <TitleSprite />
 
       {/* Center content */}
       <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ zIndex: 10 }}>
@@ -342,112 +340,54 @@ export default function Home() {
           </p>
         </motion.div>
 
-        {/* Press any key / Login card */}
-        <div className="mt-10 w-full flex justify-center">
-          <AnimatePresence mode="wait">
-            {mode === "title" && (
-              <motion.div
-                key="presskey"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ delay: 0.5 }}
-              >
-                {/* Blinking press-any-key */}
-                <motion.div
-                  animate={{ opacity: [1, 0.2, 1] }}
-                  transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-                  className="flex items-center gap-2 px-6 py-3 rounded-full font-bold text-base"
-                  style={{
-                    background: "rgba(255,255,255,0.14)",
-                    backdropFilter: "blur(10px)",
-                    border: "1.5px solid rgba(255,255,255,0.36)",
-                    color: "white",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.6)",
-                  }}
-                >
-                  ✨ Press any key to start
-                </motion.div>
-              </motion.div>
+        {/* Press any key + Quick Demo */}
+        <div className="mt-10 flex flex-col items-center gap-4">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <motion.div
+              animate={{ opacity: [1, 0.2, 1] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+              className="flex items-center gap-2 px-6 py-3 rounded-full font-bold text-base"
+              style={{
+                background: "rgba(255,255,255,0.14)",
+                backdropFilter: "blur(10px)",
+                border: "1.5px solid rgba(255,255,255,0.36)",
+                color: "white",
+                textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+              }}
+            >
+              ✨ Press any key to start
+            </motion.div>
+          </motion.div>
+
+          {/* Quick Demo — skip onboarding entirely */}
+          <motion.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.2 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={(e) => { e.stopPropagation(); handleDemo(); }}
+            disabled={demoLoading}
+            className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold disabled:opacity-50"
+            style={{
+              background: "rgba(255,208,74,0.22)",
+              backdropFilter: "blur(8px)",
+              border: "1.5px solid rgba(255,208,74,0.5)",
+              color: "rgba(255,255,255,0.95)",
+              textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              cursor: demoLoading ? "wait" : "pointer",
+            }}
+          >
+            {demoLoading ? (
+              <><motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>🌿</motion.span> Loading...</>
+            ) : (
+              <>🎮 Quick Demo (skip setup)</>
             )}
-
-            {mode === "menu" && (
-              <motion.div
-                key="menu"
-                initial={{ opacity: 0, y: 32, scale: 0.94 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -16 }}
-                transition={{ type: "spring", stiffness: 280, damping: 24 }}
-                className="w-full max-w-sm mx-4 rounded-3xl p-5 shadow-2xl"
-                style={{
-                  background: "var(--cream)",
-                  border: "3.5px solid var(--primary)",
-                  boxShadow: "0 16px 56px rgba(0,0,0,0.55)",
-                }}
-                onClick={e => e.stopPropagation()}
-              >
-                <p className="text-sm font-extrabold text-center mb-4" style={{ color: "var(--primary-dark)" }}>
-                  How would you like to start?
-                </p>
-
-                {/* Google */}
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => { playClick(); signIn("google"); }}
-                  className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl text-sm font-extrabold mb-3"
-                  style={{
-                    background: "white",
-                    color: "#1f1f1f",
-                    border: "2.5px solid #e0e0e0",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 48 48">
-                    <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/>
-                    <path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.7 7.4 6.3 14.7z"/>
-                    <path fill="#FBBC05" d="M24 46c5.9 0 10.9-2 14.5-5.4l-6.7-5.5C29.8 36.9 27 38 24 38c-6 0-11.1-4-12.9-9.5l-7 5.4C7.9 41.5 15.4 46 24 46z"/>
-                    <path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.9 2.4-2.5 4.5-4.7 5.9l6.7 5.5C42 36.6 45 31 45 24c0-1.3-.2-2.7-.5-4z"/>
-                  </svg>
-                  Continue with Google
-                </motion.button>
-
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex-1 h-px" style={{ background: "var(--border-game)" }} />
-                  <span className="text-xs font-bold" style={{ color: "var(--muted)" }}>or</span>
-                  <div className="flex-1 h-px" style={{ background: "var(--border-game)" }} />
-                </div>
-
-                {/* Demo */}
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={handleDemo}
-                  disabled={demoLoading}
-                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-extrabold disabled:opacity-60"
-                  style={{
-                    background: "var(--primary)",
-                    color: "white",
-                    border: "2.5px solid var(--primary-dark)",
-                    boxShadow: "0 4px 16px rgba(91,173,78,0.4)",
-                  }}
-                >
-                  {demoLoading ? (
-                    <>
-                      <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>🌿</motion.span>
-                      Loading your village...
-                    </>
-                  ) : (
-                    <>🎮 Try Live Demo</>
-                  )}
-                </motion.button>
-
-                <p className="text-center text-xs font-semibold mt-3" style={{ color: "var(--muted)" }}>
-                  No account needed · Instant village · Real AI agents
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          </motion.button>
         </div>
       </div>
 

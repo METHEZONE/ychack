@@ -19,3 +19,9 @@ node_modules/
 # Build
 dist/
 out/
+
+# Raw assets (source files — only public/assets/ is tracked)
+/assets/
+
+# TypeScript build info
+tsconfig.tsbuildinfo
