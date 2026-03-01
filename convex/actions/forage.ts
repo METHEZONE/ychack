@@ -3,6 +3,7 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
+import { detectCategory } from "./agentmail";
 
 const ANIMAL_TYPES = [
   "fox", "raccoon", "bear", "frog", "rabbit",
@@ -53,7 +54,8 @@ export const forageForVendors = action({
       });
     }
 
-    // 3. Get current vendor count for animal assignment
+    // 3. Detect category + get current vendor count for animal assignment
+    const category = detectCategory(args.searchQuery);
     const existingVendors = await ctx.runQuery(api.vendors.listByUser, { userId: args.userId });
     const startIndex = existingVendors.length;
 
@@ -117,6 +119,7 @@ export const forageForVendors = action({
           location: raw.location ?? undefined,
           animalType,
           characterName,
+          category,
         });
 
         // Create workflow node
@@ -136,16 +139,17 @@ export const forageForVendors = action({
           content: `Found **${raw.companyName}**${raw.location ? ` in ${raw.location}` : ""}! Moving into your village 🏡`,
         });
 
-        // Create AgentMail inbox (its address becomes our reply-to)
+        // Assign category inbox to vendor
         let inboxId: string | null = null;
         try {
           const inbox = await ctx.runAction(api.actions.agentmail.createVendorInbox, {
             vendorId,
             vendorName: raw.companyName,
+            category,
           }) as { inboxId: string };
           inboxId = inbox.inboxId;
         } catch {
-          // inbox creation failed — continue without email tracking
+          // inbox assignment failed — continue without email tracking
         }
 
         // Send email (if we have both inbox and vendor email)
@@ -191,6 +195,7 @@ export const forageForVendors = action({
           to: userEmail,
           searchQuery: args.searchQuery,
           vendorNames: rawVendors.map((v) => v.companyName),
+          category,
         });
       } catch {
         // confirmation email failed — non-critical, continue

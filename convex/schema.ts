@@ -38,6 +38,13 @@ export default defineSchema({
     formSubmitted: v.boolean(),
     emailSent: v.boolean(),
     agentmailInboxId: v.optional(v.string()),
+    category: v.optional(v.union(
+      v.literal("manufacturing"),
+      v.literal("ingredients"),
+      v.literal("legal"),
+      v.literal("distribution"),
+      v.literal("other"),
+    )),
     stage: v.union(
       v.literal("discovered"),
       v.literal("contacted"),

@@ -12,6 +12,13 @@ export const create = mutation({
     characterName: v.string(),
     positionX: v.optional(v.number()),
     positionY: v.optional(v.number()),
+    category: v.optional(v.union(
+      v.literal("manufacturing"),
+      v.literal("ingredients"),
+      v.literal("legal"),
+      v.literal("distribution"),
+      v.literal("other"),
+    )),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("vendors", {
