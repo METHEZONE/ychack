@@ -6,24 +6,20 @@ import { api } from "../_generated/api";
 import { detectCategory } from "./agentmail";
 
 // Note: "bear" (Gomi) = village mayor, "milo" = player — excluded from vendor pool
+// Max 4 vendor NPCs: rabbit, lion, deer, fox
 const ANIMAL_TYPES = [
-  "fox", "raccoon", "rabbit", "deer", "lion",
-  "frog", "squirrel", "owl", "hedgehog", "cat",
+  "rabbit", "lion", "deer", "fox",
 ] as const;
+
+const MAX_VENDORS = 4;
 
 type AnimalType = typeof ANIMAL_TYPES[number];
 
 const NPC_NAMES: Record<AnimalType, string[]> = {
-  fox: ["Rex", "Fiona", "Rusty", "Vixen"],
-  raccoon: ["Bandit", "Remy", "Scout", "Ash"],
   rabbit: ["Clover", "Hazel", "Bun", "Pip"],
-  deer: ["Bambi", "Fern", "Buck", "Maple"],
   lion: ["Leo", "Simba", "Aslan", "Nala"],
-  frog: ["Hop", "Lilly", "Croaker", "Jade"],
-  squirrel: ["Acorn", "Hazel", "Chip", "Nutmeg"],
-  owl: ["Hoot", "Sage", "Wren", "Luna"],
-  hedgehog: ["Spike", "Bramble", "Prick", "Holly"],
-  cat: ["Mochi", "Biscuit", "Nori", "Pesto"],
+  deer: ["Bambi", "Fern", "Buck", "Maple"],
+  fox: ["Rex", "Fiona", "Rusty", "Vixen"],
 };
 
 function assignAnimal(index: number): { animalType: AnimalType; characterName: string } {
@@ -112,7 +108,10 @@ export const forageForVendors = action({
       return;
     }
 
-    // 6. Process all vendors in parallel
+    // 6. Limit to max vendors (one per animal type)
+    rawVendors = rawVendors.slice(0, MAX_VENDORS);
+
+    // 7. Process all vendors in parallel
     const scaleInfo = productionScale ? `\n\nWe're looking to produce ${productionScale}${timeline ? ` with a timeline of ${timeline}` : ""}.` : "";
     const geoInfo = geoPreference ? ` Our preference for vendor location: ${geoPreference}.` : "";
 
