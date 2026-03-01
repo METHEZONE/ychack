@@ -119,6 +119,11 @@ body {
   animation: playerBob 0.36s ease-in-out infinite !important;
 }
 
+/* Root path draw-in animation (quest tree) */
+@keyframes drawRoot {
+  to { stroke-dashoffset: 0; }
+}
+
 /* Typewriter cursor blink */
 @keyframes cursorBlink {
   0%, 100% { opacity: 1; }

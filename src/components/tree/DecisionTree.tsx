@@ -4,17 +4,25 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useForageStore } from "@/lib/store";
-import { TreeNode } from "./TreeNode";
 import { motion, AnimatePresence } from "framer-motion";
 import { playClick, playChime } from "@/lib/sounds";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
+import { SpriteHead } from "@/components/ui/SpriteHead";
 
 type QuestDoc = Doc<"quests">;
 type VendorDoc = Doc<"vendors">;
 
 type ViewMode = "tree" | "compare" | "recommend";
+
+const QUEST_BOTTOM_Y = 120;
+const VENDOR_TOP_Y = 270;
+
+function rootPath(questCX: number, vx: number): string {
+  const midY = (QUEST_BOTTOM_Y + VENDOR_TOP_Y) / 2;
+  return `M ${questCX},${QUEST_BOTTOM_Y} C ${questCX},${midY} ${vx},${midY} ${vx},${VENDOR_TOP_Y}`;
+}
 
 export function DecisionTree() {
   const router = useRouter();
@@ -35,6 +43,16 @@ export function DecisionTree() {
   const [recommendedVendorId, setRecommendedVendorId] = useState<string | null>(null);
   const [recommendReason, setRecommendReason] = useState<string | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(600);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver(([e]) => setContainerW(e.contentRect.width));
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
 
   if (!quests || quests.length === 0) {
     return (
@@ -59,12 +77,10 @@ export function DecisionTree() {
 
   const activeQuest = quests.find((q: QuestDoc) => q._id === resolvedQuestId) ?? quests[0];
 
-  // Get vendors for active quest directly (no workflowNodes dependency)
   const questVendors = (vendors ?? []).filter(
     (v: VendorDoc) => v.questId === resolvedQuestId
   );
 
-  // Vendors that have received a quote
   const vendorsWithQuotes = questVendors.filter((v: VendorDoc) => v.quote?.price || v.quote?.moq || v.quote?.leadTime);
 
   async function handleRecommend() {
@@ -97,10 +113,15 @@ export function DecisionTree() {
     }
   }
 
+  // Compute vendor x positions
+  const spacing = containerW / (questVendors.length + 1);
+  const vendorXs = questVendors.map((_: VendorDoc, i: number) => spacing * (i + 1));
+  const questCX = containerW / 2;
+
   return (
     <div className="h-full overflow-auto scrollable p-6">
       {/* Quest selector */}
-      <div className="flex items-center gap-2 mb-8 flex-wrap">
+      <div className="flex items-center gap-2 mb-6 flex-wrap">
         {quests.map((quest: QuestDoc) => (
           <div key={quest._id} className="relative group">
             <button
@@ -121,7 +142,6 @@ export function DecisionTree() {
             >
               {quest.description}
             </button>
-            {/* Delete quest button */}
             <motion.button
               whileHover={{ scale: 1.15 }}
               whileTap={{ scale: 0.9 }}
@@ -141,7 +161,7 @@ export function DecisionTree() {
 
       {/* View mode tabs */}
       {questVendors.length > 0 && (
-        <div className="flex items-center gap-2 mb-6">
+        <div className="flex items-center gap-2 mb-4">
           {(["tree", "compare", "recommend"] as ViewMode[]).map((mode) => (
             <motion.button
               key={mode}
@@ -265,81 +285,166 @@ export function DecisionTree() {
         </AnimatePresence>
       )}
 
-      {/* ── TREE VIEW ────────────────────────────────────────────────── */}
-      {viewMode !== "compare" && (
-      <div className="flex flex-col items-center gap-6">
-        {/* Root quest node with agent character */}
-        <div className="flex flex-col items-center">
-          <TreeNode
-            node={{
-              _id: activeQuest._id,
-              label: activeQuest.description,
-              stage: activeQuest.status,
-              isRecommended: false,
-              isDead: false,
-              questAgent: activeQuest.animalType && activeQuest.characterName
-                ? { animalType: activeQuest.animalType, characterName: activeQuest.characterName }
-                : undefined,
-            }}
-            isRoot
-          />
-        </div>
+      {/* ── TREE VIEW — Roots growing downward ───────────────────────── */}
+      {viewMode === "tree" && (
+        <div
+          ref={containerRef}
+          style={{
+            position: "relative",
+            background: "#1a0e05",
+            minHeight: VENDOR_TOP_Y + 180,
+            border: "3px solid var(--wood-outer)",
+            boxShadow: "inset 0 0 40px rgba(0,0,0,0.4)",
+          }}
+        >
+          {/* SVG roots */}
+          {questVendors.length > 0 && (
+            <svg
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: VENDOR_TOP_Y + 20,
+                pointerEvents: "none",
+              }}
+              aria-hidden
+            >
+              <defs>
+                {questVendors.map((_: VendorDoc, i: number) => (
+                  <path key={i} id={`rootpath-${i}`} d={rootPath(questCX, vendorXs[i])} />
+                ))}
+              </defs>
 
-        {/* Connector */}
-        {questVendors.length > 0 && (
-          <div className="w-0.5 h-8" style={{ background: "var(--border-game)" }} />
-        )}
+              {questVendors.map((v: VendorDoc, i: number) => {
+                const color = STAGE_COLORS[v.stage as VendorStage] ?? "#8B6914";
+                return (
+                  <g key={v._id}>
+                    {/* Shadow root */}
+                    <path d={rootPath(questCX, vendorXs[i])} fill="none" stroke="#3d2010" strokeWidth={5} />
+                    {/* Glowing colored root — draws in */}
+                    <path
+                      d={rootPath(questCX, vendorXs[i])}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      style={{
+                        strokeDasharray: 500,
+                        strokeDashoffset: 500,
+                        animation: `drawRoot 1s ease forwards ${i * 0.18 + 0.4}s`,
+                        filter: `drop-shadow(0 0 5px ${color})`,
+                      }}
+                    />
+                    {/* Energy pulse orb */}
+                    <circle r={5} fill={color} style={{ filter: "drop-shadow(0 0 7px currentColor)", opacity: 0.95 }}>
+                      <animateMotion
+                        dur={`${1.8 + i * 0.25}s`}
+                        repeatCount="indefinite"
+                        begin={`${i * 0.18 + 1.5}s`}
+                      >
+                        <mpath href={`#rootpath-${i}`} />
+                      </animateMotion>
+                    </circle>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
 
-        {/* Vendor branches */}
-        {questVendors.length > 0 && (
-          <div className="flex items-start gap-6 flex-wrap justify-center">
-            {questVendors.map((vendor: VendorDoc) => (
-              <div key={vendor._id} className="relative group flex flex-col items-center gap-2">
-                <TreeNode
-                  node={{
-                    _id: vendor._id,
-                    label: vendor.companyName,
-                    stage: vendor.stage,
-                    isRecommended: vendor._id === recommendedVendorId,
-                    isDead: vendor.stage === "dead",
-                    deadReason: vendor.deadReason,
-                    reason: vendor.agentNotes,
-                    vendorId: vendor._id,
-                  }}
-                />
-                {/* Delete vendor button */}
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    playClick();
-                    setConfirmDeleteVendor(vendor._id);
-                  }}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                  style={{ background: "#ef4444", color: "white", border: "1.5px solid #dc2626" }}
-                >
-                  ✕
-                </motion.button>
+          {/* Quest node (top center) */}
+          <div style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 1 }}>
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 20 }}
+              className="pixel-panel flex flex-col items-center gap-2 px-4 py-3"
+              style={{ minWidth: 160, background: "var(--parchment)" }}
+            >
+              {activeQuest.animalType ? (
+                <SpriteHead animalType={activeQuest.animalType} size={48} />
+              ) : (
+                <span style={{ fontSize: 32 }}>🗺️</span>
+              )}
+              <div
+                className="font-pixel text-center"
+                style={{ fontSize: 7, color: "var(--wood-outer)", maxWidth: 150 }}
+              >
+                {activeQuest.description.slice(0, 30)}{activeQuest.description.length > 30 ? "…" : ""}
               </div>
-            ))}
+            </motion.div>
           </div>
-        )}
 
-        {/* Empty state */}
-        {questVendors.length === 0 && (
-          <div
-            className="text-center py-6 px-8 rounded-2xl"
-            style={{ background: "var(--cream)", border: "2px solid var(--border-game)" }}
-          >
-            <div className="text-3xl mb-2">🔍</div>
-            <p className="text-sm font-semibold" style={{ color: "var(--muted)" }}>
+          {/* Vendor nodes (bottom row) */}
+          {questVendors.map((vendor: VendorDoc, i: number) => (
+            <motion.div
+              key={vendor._id}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 450, damping: 22, delay: i * 0.18 + 0.9 }}
+              style={{
+                position: "absolute",
+                top: VENDOR_TOP_Y,
+                left: vendorXs[i] - 64,
+                width: 128,
+                cursor: "pointer",
+                zIndex: 1,
+              }}
+              className="pixel-panel group"
+              onClick={() => { playClick(); router.push(`/vendor/${vendor._id}`); }}
+            >
+              {/* Stage color stripe */}
+              <div style={{ height: 4, background: STAGE_COLORS[vendor.stage as VendorStage] ?? "#888" }} />
+              <div className="p-2 text-center">
+                <div
+                  className="font-pixel"
+                  style={{ fontSize: 6, color: "var(--wood-outer)", lineHeight: 1.7 }}
+                >
+                  {vendor.companyName.slice(0, 14)}{vendor.companyName.length > 14 ? "…" : ""}
+                </div>
+                <div
+                  style={{
+                    fontSize: 7,
+                    color: STAGE_COLORS[vendor.stage as VendorStage] ?? "#888",
+                    fontFamily: "var(--font-pixel)",
+                    marginTop: 3,
+                  }}
+                >
+                  {(STAGE_LABELS[vendor.stage as VendorStage] ?? vendor.stage).toUpperCase()}
+                </div>
+              </div>
+              {/* Delete X on hover */}
+              <motion.button
+                whileTap={{ scale: 0.9 }}
+                onClick={(e) => { e.stopPropagation(); playClick(); setConfirmDeleteVendor(vendor._id); }}
+                className="absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ background: "#ef4444", color: "white", border: "2px solid #dc2626" }}
+              >
+                ✕
+              </motion.button>
+            </motion.div>
+          ))}
+
+          {/* Empty state */}
+          {questVendors.length === 0 && (
+            <div
+              className="text-center py-6 px-8"
+              style={{
+                position: "absolute",
+                top: VENDOR_TOP_Y + 20,
+                left: "50%",
+                transform: "translateX(-50%)",
+                color: "#7a5a3a",
+                fontFamily: "var(--font-nunito), sans-serif",
+                fontSize: 12,
+                whiteSpace: "nowrap",
+              }}
+            >
               No vendors found yet for this quest.
-            </p>
-          </div>
-        )}
-      </div>
-      )} {/* end tree view */}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Confirm delete quest modal */}
       <AnimatePresence>

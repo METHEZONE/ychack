@@ -29,6 +29,10 @@ interface ForageStore {
   agentStatus: string;
   setAgentBusy: (busy: boolean, status?: string) => void;
 
+  // Tree popup
+  treeOpen: boolean;
+  setTreeOpen: (open: boolean) => void;
+
   // Init (minimal — most data now in Convex DB)
   initFromLocalStorage: () => void;
 }
@@ -54,6 +58,9 @@ export const useForageStore = create<ForageStore>((set) => ({
   agentBusy: false,
   agentStatus: "",
   setAgentBusy: (busy, status = "") => set({ agentBusy: busy, agentStatus: status }),
+
+  treeOpen: false,
+  setTreeOpen: (open) => set({ treeOpen: open }),
 
   // Minimal init — userId is restored from cookie/session, quest from DB
   initFromLocalStorage: () => {

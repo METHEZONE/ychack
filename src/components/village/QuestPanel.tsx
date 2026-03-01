@@ -6,10 +6,10 @@ import { useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
-import { ANIMAL_EMOJI, AnimalType } from "@/lib/animals";
 import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
 import { playClick } from "@/lib/sounds";
 import { Doc } from "../../../convex/_generated/dataModel";
+import { SpriteHead } from "@/components/ui/SpriteHead";
 
 type QuestDoc = Doc<"quests">;
 type VendorDoc = Doc<"vendors">;
@@ -26,6 +26,9 @@ const STAGE_DOT: Record<VendorStage, string> = {
 export function QuestPanel() {
   const userId = useForageStore((s) => s.userId);
   const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
+  const agentBusy = useForageStore((s) => s.agentBusy);
+  const agentStatus = useForageStore((s) => s.agentStatus);
+  const setTreeOpen = useForageStore((s) => s.setTreeOpen);
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
@@ -35,6 +38,38 @@ export function QuestPanel() {
 
   const allQuests = quests ?? [];
   const allVendors = vendors ?? [];
+
+  // Derive next-step suggestions from vendor stages
+  const nextSteps = (() => {
+    if (allQuests.length === 0) return [{ label: "Walk to HQ to start!", vendorId: null }];
+    if (allVendors.length === 0) return [{ label: "Walk to HQ to find vendors", vendorId: null }];
+
+    const suggestions: { label: string; vendorId: string | null }[] = [];
+
+    const replied = allVendors.filter((v) => v.stage === "replied");
+    for (const v of replied.slice(0, 3)) {
+      if (suggestions.length >= 3) break;
+      suggestions.push({ label: `Review ${v.companyName}'s quote →`, vendorId: v._id });
+    }
+
+    const negotiating = allVendors.filter((v) => v.stage === "negotiating");
+    for (const v of negotiating) {
+      if (suggestions.length >= 3) break;
+      suggestions.push({ label: `Check deal with ${v.companyName} →`, vendorId: v._id });
+    }
+
+    const closed = allVendors.filter((v) => v.stage === "closed");
+    for (const v of closed) {
+      if (suggestions.length >= 3) break;
+      suggestions.push({ label: `🎉 Closed with ${v.companyName}!`, vendorId: v._id });
+    }
+
+    if (suggestions.length === 0) {
+      suggestions.push({ label: "Walk to HQ to find vendors", vendorId: null });
+    }
+
+    return suggestions.slice(0, 3);
+  })();
 
   if (collapsed) {
     return (
@@ -94,7 +129,41 @@ export function QuestPanel() {
         </button>
       </div>
 
-      {/* Content */}
+      {/* ── A. AGENT TASKS section ── */}
+      <AnimatePresence>
+        {agentBusy && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            style={{ overflow: "hidden", flexShrink: 0 }}
+          >
+            <div
+              className="flex items-center gap-2 px-3 py-2"
+              style={{
+                background: "var(--primary)",
+                borderBottom: "3px solid var(--primary-dark)",
+              }}
+            >
+              <span
+                className="w-2 h-2 rounded-full glow-pulse flex-shrink-0"
+                style={{ background: "white" }}
+              />
+              <div
+                className="font-pixel"
+                style={{ fontSize: 6, color: "white", letterSpacing: "0.04em", lineHeight: 1.8, flex: 1, minWidth: 0 }}
+              >
+                AGENT TASK
+                <div style={{ opacity: 0.9, marginTop: 1 }}>
+                  {(agentStatus || "WORKING...").slice(0, 28)}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── B. QUESTS section ── */}
       <div className="flex-1 overflow-y-auto pixel-scroll" style={{ padding: "8px 6px" }}>
         {allQuests.length === 0 ? (
           <div className="text-center py-6 px-3">
@@ -109,7 +178,6 @@ export function QuestPanel() {
         ) : (
           allQuests.map((quest: QuestDoc, qi: number) => {
             const questVendors = allVendors.filter((v: VendorDoc) => v.questId === quest._id);
-            const animalEmoji = ANIMAL_EMOJI[quest.animalType as AnimalType] ?? "🗺️";
             const isExpanded = expandedQuestId === quest._id;
             const repliedCount = questVendors.filter((v) => ["replied","negotiating","closed"].includes(v.stage)).length;
 
@@ -128,7 +196,14 @@ export function QuestPanel() {
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    <span style={{ fontSize: 16, flexShrink: 0 }}>{animalEmoji}</span>
+                    {/* Sprite head or fallback icon */}
+                    <div style={{ flexShrink: 0, width: 24, overflow: "hidden" }}>
+                      {quest.animalType ? (
+                        <SpriteHead animalType={quest.animalType} size={24} />
+                      ) : (
+                        <span style={{ fontSize: 16 }}>🗺️</span>
+                      )}
+                    </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         className="font-pixel"
@@ -165,7 +240,7 @@ export function QuestPanel() {
                           e.stopPropagation();
                           playClick();
                           setActiveQuestId(quest._id);
-                          router.push("/tree");
+                          setTreeOpen(true);
                         }}
                       >
                         TREE
@@ -268,21 +343,53 @@ export function QuestPanel() {
         )}
       </div>
 
-      {/* Footer: total count */}
-      {allVendors.length > 0 && (
+      {/* ── C. NEXT STEPS section ── */}
+      <div
+        className="flex-shrink-0"
+        style={{
+          borderTop: "3px solid var(--wood-outer)",
+          background: "var(--parchment-dark)",
+          padding: "6px 6px 8px",
+        }}
+      >
         <div
-          className="flex-shrink-0 font-pixel text-center"
-          style={{
-            background: "var(--parchment-dark)",
-            borderTop: "3px solid var(--wood-outer)",
-            padding: "6px 8px",
-            fontSize: 6,
-            color: "var(--wood-mid)",
-          }}
+          className="font-pixel"
+          style={{ fontSize: 6, color: "var(--wood-mid)", marginBottom: 5, letterSpacing: "0.04em" }}
         >
-          {allVendors.length} TOTAL VENDORS
+          NEXT STEPS
         </div>
-      )}
+        {nextSteps.map((step, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, x: -4 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className={step.vendorId ? "cursor-pointer" : ""}
+            onClick={() => {
+              if (step.vendorId) {
+                playClick();
+                router.push(`/vendor/${step.vendorId}`);
+              }
+            }}
+            style={{
+              background: step.vendorId ? "var(--accent)" : "var(--parchment)",
+              border: `2px solid ${step.vendorId ? "var(--accent-hover)" : "var(--wood-mid)"}`,
+              padding: "4px 8px",
+              marginBottom: 4,
+              fontFamily: "var(--font-nunito), sans-serif",
+              fontSize: 9,
+              fontWeight: 700,
+              color: step.vendorId ? "var(--wood-outer)" : "var(--wood-mid)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              boxShadow: step.vendorId ? "0 2px 0 var(--pixel-shadow)" : "none",
+            }}
+          >
+            {step.label}
+          </motion.div>
+        ))}
+      </div>
     </motion.div>
   );
 }

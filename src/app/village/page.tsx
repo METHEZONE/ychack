@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import nextDynamic from "next/dynamic";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -16,7 +16,9 @@ import { HQInterior } from "@/components/village/HQInterior";
 import { VillageTutorial } from "@/components/village/VillageTutorial";
 import { DemoSeed } from "@/components/village/DemoSeed";
 import { GomiDataCollect } from "@/components/village/GomiDataCollect";
+import { DecisionTree } from "@/components/tree/DecisionTree";
 import { useForageStore } from "@/lib/store";
+import { playClick } from "@/lib/sounds";
 import { LS_USER_ID } from "@/lib/constants";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 
@@ -33,6 +35,8 @@ function VillagePageInner() {
   const userId = useForageStore((s) => s.userId);
   const setUserId = useForageStore((s) => s.setUserId);
   const initFromLocalStorage = useForageStore((s) => s.initFromLocalStorage);
+  const treeOpen = useForageStore((s) => s.treeOpen);
+  const setTreeOpen = useForageStore((s) => s.setTreeOpen);
   const bulkApprove = useMutation(api.vendors.bulkApprove);
 
   const [dialogueVendor, setDialogueVendor] = useState<VendorDoc | null>(null);
@@ -101,6 +105,7 @@ function VillagePageInner() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (treeOpen) { setTreeOpen(false); return; }
         if (gomiCollectOpen && !onboardingDone) return;
         setDialogueVendor(null);
         setForageSearchOpen(false);
@@ -110,7 +115,7 @@ function VillagePageInner() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [gomiCollectOpen, onboardingDone]);
+  }, [gomiCollectOpen, onboardingDone, treeOpen, setTreeOpen]);
 
   const handleSelectQuest = useCallback((questId: Id<"quests">) => {
     useForageStore.getState().setActiveQuestId(questId);
@@ -198,6 +203,30 @@ function VillagePageInner() {
               returnVendorId={returnVendorId}
               isMandatory={!onboardingDone}
             />
+          )}
+          {treeOpen && (
+            <motion.div
+              key="tree-popup"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className="absolute inset-4 z-50 pixel-panel flex flex-col overflow-hidden"
+            >
+              <div className="pixel-header flex items-center justify-between flex-shrink-0">
+                <span>🌳 QUEST TREE</span>
+                <button
+                  className="pixel-btn"
+                  style={{ padding: "4px 10px", fontSize: 8 }}
+                  onClick={() => { playClick(); setTreeOpen(false); }}
+                >
+                  ✕ CLOSE
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto scrollable">
+                <DecisionTree />
+              </div>
+            </motion.div>
           )}
         </AnimatePresence>
 

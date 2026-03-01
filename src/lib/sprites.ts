@@ -104,6 +104,17 @@ export const LION: SpriteSheet = {
   ],
 };
 
+// Fraction of frame 0 height that contains just the head
+export const HEAD_CROP_FRACTION: Record<string, number> = {
+  fox: 0.42,      // foxi frame 0: h=472, head ~top 200px
+  rabbit: 0.40,   // rabi frame 0: h=443
+  deer: 0.42,     // deer frame 0: h=323
+  lion: 0.30,     // lion frame 0: h=966 (very tall portrait)
+  bear: 0.32,     // gomi frame 0: h=713
+  raccoon: 0.32,  // gomi (same sheet as bear)
+  milo: 0.38,     // milo frame 0: h=456
+};
+
 export function getSpriteSheet(animalType: string): SpriteSheet | null {
   switch (animalType) {
     case "fox": return FOXI;

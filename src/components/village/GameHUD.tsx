@@ -19,6 +19,7 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
   const userId = useForageStore((s) => s.userId);
   const agentBusy = useForageStore((s) => s.agentBusy);
   const agentStatus = useForageStore((s) => s.agentStatus);
+  const setTreeOpen = useForageStore((s) => s.setTreeOpen);
   const router = useRouter();
   const [soundOn, setSoundOn] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -100,7 +101,7 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
       <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
         <motion.button
           whileTap={{ scale: 0.93 }}
-          onClick={() => { playClick(); router.push("/tree"); }}
+          onClick={() => { playClick(); setTreeOpen(true); }}
           className="pixel-btn flex items-center gap-1.5 px-3 py-2"
         >
           <span style={{ fontSize: 13 }}>🌳</span>
@@ -170,7 +171,7 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
               </button>
               <button
                 className="pixel-btn flex items-center gap-2 w-full px-3 py-2 text-left"
-                onClick={() => { playClick(); setSettingsOpen(false); router.push("/tree"); }}
+                onClick={() => { playClick(); setSettingsOpen(false); setTreeOpen(true); }}
               >
                 <span>🌳</span>
                 <span style={{ fontSize: 7 }}>QUEST TREE</span>
