@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc } from "../../../convex/_generated/dataModel";
-import { ANIMAL_COLORS, AnimalType } from "@/lib/animals";
-import { SpriteHead } from "@/components/ui/SpriteHead";
+import { ANIMAL_EMOJI, ANIMAL_COLORS, AnimalType } from "@/lib/animals";
 import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
 import { playDialogueBlip, playChime, playClick, playNegotiate } from "@/lib/sounds";
 
@@ -87,6 +86,7 @@ type DialogueState = "talking" | "negotiating" | "draft" | "sending" | "success"
 
 export function NPCDialogue({ vendor, onClose }: NPCDialogueProps) {
   const router = useRouter();
+  const emoji = ANIMAL_EMOJI[vendor.animalType as AnimalType] ?? "🐾";
   const color = ANIMAL_COLORS[vendor.animalType as AnimalType] ?? "#888";
   const stageColor = STAGE_COLORS[vendor.stage as VendorStage];
   const fullText = getDialogueText(vendor);
@@ -224,16 +224,10 @@ export function NPCDialogue({ vendor, onClose }: NPCDialogueProps) {
           <motion.div
             animate={{ y: [0, -4, 0] }}
             transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut" }}
-            className="rounded-2xl shadow-md flex items-center justify-center"
-            style={{
-              background: color + "28",
-              border: `3px solid ${color}60`,
-              overflow: "hidden",
-              imageRendering: "pixelated",
-              flexShrink: 0,
-            }}
+            className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl shadow-md"
+            style={{ background: color + "28", border: `3px solid ${color}60` }}
           >
-            <SpriteHead animalType={vendor.animalType} size={64} />
+            {emoji}
           </motion.div>
           <div
             className="text-xs font-extrabold text-center px-2 py-0.5 rounded-full truncate max-w-[76px]"

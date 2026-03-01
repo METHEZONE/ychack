@@ -8,16 +8,26 @@ import { motion, AnimatePresence } from "framer-motion";
 import { playClick, playChime } from "@/lib/sounds";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
-import { SpriteHead } from "@/components/ui/SpriteHead";
+import { STAGE_LABELS, VendorStage } from "@/lib/constants";
+import { ANIMAL_EMOJI, AnimalType } from "@/lib/animals";
 
 type QuestDoc = Doc<"quests">;
 type VendorDoc = Doc<"vendors">;
 
 type ViewMode = "tree" | "compare" | "recommend";
 
+// Earthy root colors — warmer, more organic than raw stage colors
+const ROOT_STAGE_COLORS: Record<VendorStage, string> = {
+  discovered: "#b8956a",  // warm tan/bark
+  contacted:  "#6aafd4",  // muted sky
+  replied:    "#5abf7a",  // forest green
+  negotiating:"#d4a832",  // warm gold
+  closed:     "#68a850",  // deep forest
+  dead:       "#b06868",  // warm rust
+};
+
 const QUEST_BOTTOM_Y = 120;
-const VENDOR_TOP_Y = 270;
+const VENDOR_TOP_Y = 290;
 
 function rootPath(questCX: number, vx: number): string {
   const midY = (QUEST_BOTTOM_Y + VENDOR_TOP_Y) / 2;
@@ -57,20 +67,16 @@ export function DecisionTree() {
   if (!quests || quests.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center">
+        <div className="text-center pixel-panel p-8">
           <div className="text-5xl mb-3">🗺️</div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--foreground)" }}>
-            No quests yet
-          </h2>
-          <p className="text-sm" style={{ color: "var(--muted)" }}>
-            Start by asking Forage to find vendors for you.
-          </p>
+          <div className="font-pixel text-center" style={{ fontSize: 8, color: "var(--wood-outer)", lineHeight: 2 }}>
+            NO QUESTS YET.{"\n"}WALK TO HQ TO START!
+          </div>
         </div>
       </div>
     );
   }
 
-  // Auto-select first quest if no active quest
   const resolvedQuestId = activeQuestId && quests.find((q: QuestDoc) => q._id === activeQuestId)
     ? activeQuestId
     : quests[0]._id;
@@ -113,45 +119,31 @@ export function DecisionTree() {
     }
   }
 
-  // Compute vendor x positions
+  // Vendor x positions
   const spacing = containerW / (questVendors.length + 1);
   const vendorXs = questVendors.map((_: VendorDoc, i: number) => spacing * (i + 1));
   const questCX = containerW / 2;
 
   return (
-    <div className="h-full overflow-auto scrollable p-6">
-      {/* Quest selector */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap">
+    <div className="h-full overflow-auto scrollable" style={{ padding: "16px 16px 20px", background: "var(--parchment)" }}>
+
+      {/* ── Quest selector (woody pixel buttons) ── */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         {quests.map((quest: QuestDoc) => (
           <div key={quest._id} className="relative group">
             <button
-              onClick={() => {
-                playClick();
-                setActiveQuestId(quest._id);
-              }}
-              className="px-4 py-2 rounded-full text-sm font-bold transition-all"
-              style={
-                quest._id === resolvedQuestId
-                  ? { background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }
-                  : {
-                      background: "var(--cream)",
-                      color: "var(--text)",
-                      border: "2px solid var(--border-game)",
-                    }
-              }
+              onClick={() => { playClick(); setActiveQuestId(quest._id); }}
+              className={`pixel-btn ${quest._id === resolvedQuestId ? "pixel-btn-green" : ""}`}
+              style={{ fontSize: 7, padding: "7px 14px" }}
             >
-              {quest.description}
+              {ANIMAL_EMOJI[quest.animalType as AnimalType] ?? "🗺️"} {quest.description.slice(0, 22)}{quest.description.length > 22 ? "…" : ""}
             </button>
             <motion.button
               whileHover={{ scale: 1.15 }}
               whileTap={{ scale: 0.9 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                playClick();
-                setConfirmDeleteQuest(quest._id);
-              }}
-              className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ background: "#ef4444", color: "white", border: "1.5px solid #dc2626" }}
+              onClick={(e) => { e.stopPropagation(); playClick(); setConfirmDeleteQuest(quest._id); }}
+              className="absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: "#ef4444", color: "white", border: "2px solid #dc2626" }}
             >
               ✕
             </motion.button>
@@ -159,21 +151,18 @@ export function DecisionTree() {
         ))}
       </div>
 
-      {/* View mode tabs */}
+      {/* ── View mode tabs (woody pixel buttons) ── */}
       {questVendors.length > 0 && (
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-5">
           {(["tree", "compare", "recommend"] as ViewMode[]).map((mode) => (
             <motion.button
               key={mode}
-              whileTap={{ scale: 0.96 }}
+              whileTap={{ scale: 0.93 }}
               onClick={() => { playClick(); setViewMode(mode); if (mode === "recommend" && !recommendedVendorId) handleRecommend(); }}
-              className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all"
-              style={viewMode === mode
-                ? { background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }
-                : { background: "var(--cream)", color: "var(--text)", border: "2px solid var(--border-game)" }
-              }
+              className={`pixel-btn ${viewMode === mode ? "pixel-btn-accent" : ""}`}
+              style={{ fontSize: 7, padding: "6px 12px" }}
             >
-              {mode === "tree" ? "🌳 Tree" : mode === "compare" ? "📊 Compare" : "⭐ Recommend"}
+              {mode === "tree" ? "🌳 TREE" : mode === "compare" ? "📊 COMPARE" : "⭐ PICK BEST"}
             </motion.button>
           ))}
         </div>
@@ -181,53 +170,51 @@ export function DecisionTree() {
 
       {/* ── COMPARE VIEW ─────────────────────────────────────────────── */}
       {viewMode === "compare" && questVendors.length > 0 && (
-        <div className="overflow-x-auto rounded-2xl mb-6" style={{ border: "2px solid var(--border-game)" }}>
+        <div className="overflow-x-auto mb-6 pixel-panel">
           <table className="w-full text-xs">
             <thead>
-              <tr style={{ background: "var(--primary)", color: "white" }}>
-                <th className="px-3 py-2.5 text-left font-extrabold">Vendor</th>
-                <th className="px-3 py-2.5 text-center font-extrabold">Stage</th>
-                <th className="px-3 py-2.5 text-center font-extrabold">💰 Price</th>
-                <th className="px-3 py-2.5 text-center font-extrabold">📦 MOQ</th>
-                <th className="px-3 py-2.5 text-center font-extrabold">⏱ Lead</th>
-                <th className="px-3 py-2.5 text-center font-extrabold">Notes</th>
+              <tr style={{ background: "var(--wood-header)", color: "#fff5e0" }}>
+                <th className="px-3 py-2.5 text-left font-pixel" style={{ fontSize: 6 }}>VENDOR</th>
+                <th className="px-3 py-2.5 text-center font-pixel" style={{ fontSize: 6 }}>STAGE</th>
+                <th className="px-3 py-2.5 text-center font-pixel" style={{ fontSize: 6 }}>💰 PRICE</th>
+                <th className="px-3 py-2.5 text-center font-pixel" style={{ fontSize: 6 }}>📦 MOQ</th>
+                <th className="px-3 py-2.5 text-center font-pixel" style={{ fontSize: 6 }}>⏱ LEAD</th>
+                <th className="px-3 py-2.5 text-center font-pixel" style={{ fontSize: 6 }}>NOTES</th>
               </tr>
             </thead>
             <tbody>
               {questVendors.map((v: VendorDoc, i: number) => {
-                const stageColor = STAGE_COLORS[v.stage as VendorStage] ?? "#888";
+                const rootColor = ROOT_STAGE_COLORS[v.stage as VendorStage] ?? "#888";
                 const stageLabel = STAGE_LABELS[v.stage as VendorStage] ?? v.stage;
                 const isRec = v._id === recommendedVendorId;
                 return (
                   <tr
                     key={v._id}
                     onClick={() => { playClick(); router.push(`/vendor/${v._id}`); }}
-                    className="cursor-pointer transition-colors"
+                    className="cursor-pointer"
                     style={{
-                      background: isRec ? "rgba(255,208,74,0.12)" : i % 2 === 0 ? "var(--cream)" : "var(--panel)",
-                      borderBottom: "1px solid var(--border-game)",
+                      background: isRec ? "rgba(212,168,50,0.12)" : i % 2 === 0 ? "var(--parchment)" : "var(--parchment-dark)",
+                      borderBottom: "2px solid var(--wood-mid)",
                     }}
                   >
-                    <td className="px-3 py-2.5 font-extrabold" style={{ color: "var(--text)" }}>
+                    <td className="px-3 py-2 font-extrabold" style={{ color: "var(--wood-outer)" }}>
                       {isRec && <span className="mr-1">⭐</span>}
                       {v.companyName}
                       {v.location && <div className="text-xs font-normal opacity-60">{v.location}</div>}
                     </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: stageColor + "22", color: stageColor }}>
-                        {stageLabel}
-                      </span>
+                    <td className="px-3 py-2 text-center">
+                      <span className="font-pixel" style={{ fontSize: 5, color: rootColor }}>{stageLabel.toUpperCase()}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-center font-bold" style={{ color: "var(--text)" }}>
+                    <td className="px-3 py-2 text-center font-bold" style={{ color: "var(--wood-outer)" }}>
                       {v.quote?.price ?? <span className="opacity-30">—</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-center font-bold" style={{ color: "var(--text)" }}>
+                    <td className="px-3 py-2 text-center font-bold" style={{ color: "var(--wood-outer)" }}>
                       {v.quote?.moq ?? <span className="opacity-30">—</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-center font-bold" style={{ color: "var(--text)" }}>
+                    <td className="px-3 py-2 text-center font-bold" style={{ color: "var(--wood-outer)" }}>
                       {v.quote?.leadTime ?? <span className="opacity-30">—</span>}
                     </td>
-                    <td className="px-3 py-2.5 max-w-[180px]" style={{ color: "var(--muted)" }}>
+                    <td className="px-3 py-2 max-w-[180px]" style={{ color: "var(--wood-mid)", fontSize: 10 }}>
                       {v.agentNotes ? v.agentNotes.slice(0, 80) + (v.agentNotes.length > 80 ? "…" : "") : <span className="opacity-30">—</span>}
                     </td>
                   </tr>
@@ -236,8 +223,8 @@ export function DecisionTree() {
             </tbody>
           </table>
           {vendorsWithQuotes.length === 0 && (
-            <div className="text-center py-4 text-xs font-semibold" style={{ color: "var(--muted)" }}>
-              No quotes yet — vendors need to reply first
+            <div className="text-center py-4 font-pixel" style={{ fontSize: 6, color: "var(--wood-mid)" }}>
+              NO QUOTES YET
             </div>
           )}
         </div>
@@ -251,18 +238,17 @@ export function DecisionTree() {
               className="flex flex-col items-center gap-3 py-8">
               <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
                 className="text-3xl">🌿</motion.div>
-              <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>Forage is picking the best...</div>
+              <div className="font-pixel text-center" style={{ fontSize: 7, color: "var(--wood-mid)" }}>PICKING BEST VENDOR...</div>
             </motion.div>
           ) : recommendReason ? (
             <motion.div key="result" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl px-5 py-4 mb-6"
-              style={{ background: "var(--cream)", border: "2.5px solid var(--accent)" }}>
+              className="pixel-panel px-5 py-4 mb-6">
               <div className="flex items-start gap-3">
                 <div className="text-2xl flex-shrink-0">⭐</div>
                 <div>
                   {recommendedVendorId && (
-                    <div className="text-sm font-extrabold mb-1" style={{ color: "var(--primary-dark)" }}>
-                      Best pick: {questVendors.find((v: VendorDoc) => v._id === recommendedVendorId)?.companyName ?? "a vendor"}
+                    <div className="font-pixel mb-2" style={{ fontSize: 7, color: "var(--wood-outer)" }}>
+                      BEST PICK: {questVendors.find((v: VendorDoc) => v._id === recommendedVendorId)?.companyName ?? "a vendor"}
                     </div>
                   )}
                   <div className="text-xs font-semibold leading-relaxed" style={{ color: "var(--text)" }}>
@@ -272,10 +258,10 @@ export function DecisionTree() {
                     <motion.button
                       whileTap={{ scale: 0.96 }}
                       onClick={() => { playClick(); router.push(`/vendor/${recommendedVendorId}`); }}
-                      className="mt-2.5 px-3 py-1.5 rounded-full text-xs font-extrabold"
-                      style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
+                      className="pixel-btn pixel-btn-green mt-3"
+                      style={{ fontSize: 7, padding: "6px 14px" }}
                     >
-                      View vendor →
+                      VIEW VENDOR →
                     </motion.button>
                   )}
                 </div>
@@ -292,11 +278,38 @@ export function DecisionTree() {
           style={{
             position: "relative",
             background: "#1a0e05",
-            minHeight: VENDOR_TOP_Y + 180,
-            border: "3px solid var(--wood-outer)",
-            boxShadow: "inset 0 0 40px rgba(0,0,0,0.4)",
+            minHeight: VENDOR_TOP_Y + 200,
+            border: "4px solid var(--wood-outer)",
+            boxShadow: "inset 0 0 60px rgba(0,0,0,0.5), 4px 4px 0 var(--pixel-shadow)",
           }}
         >
+          {/* Color legend — top right */}
+          <div style={{ position: "absolute", top: 10, right: 10, zIndex: 5 }}>
+            <div style={{
+              background: "rgba(26,14,5,0.92)",
+              border: "3px solid var(--wood-mid)",
+              boxShadow: "inset 0 0 0 1px var(--wood-light), 3px 3px 0 var(--pixel-shadow)",
+              padding: "8px 10px",
+            }}>
+              <div className="font-pixel" style={{ fontSize: 6, color: "#c8a870", marginBottom: 7, letterSpacing: "0.06em" }}>
+                STAGE KEY
+              </div>
+              {(Object.entries(ROOT_STAGE_COLORS) as [VendorStage, string][]).map(([stage, color]) => (
+                <div key={stage} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                  <div style={{
+                    width: 10, height: 10, background: color,
+                    border: "1.5px solid rgba(255,255,255,0.25)",
+                    boxShadow: `0 0 4px ${color}88`,
+                    flexShrink: 0,
+                  }} />
+                  <span className="font-pixel" style={{ fontSize: 5, color: "#c8a870", letterSpacing: "0.04em" }}>
+                    {STAGE_LABELS[stage].toUpperCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* SVG roots */}
           {questVendors.length > 0 && (
             <svg
@@ -317,12 +330,14 @@ export function DecisionTree() {
               </defs>
 
               {questVendors.map((v: VendorDoc, i: number) => {
-                const color = STAGE_COLORS[v.stage as VendorStage] ?? "#8B6914";
+                const color = ROOT_STAGE_COLORS[v.stage as VendorStage] ?? "#b8956a";
                 return (
                   <g key={v._id}>
-                    {/* Shadow root */}
-                    <path d={rootPath(questCX, vendorXs[i])} fill="none" stroke="#3d2010" strokeWidth={5} />
-                    {/* Glowing colored root — draws in */}
+                    {/* Outer bark shadow */}
+                    <path d={rootPath(questCX, vendorXs[i])} fill="none" stroke="#0d0702" strokeWidth={8} />
+                    {/* Bark texture */}
+                    <path d={rootPath(questCX, vendorXs[i])} fill="none" stroke="#4a2c14" strokeWidth={5} />
+                    {/* Stage-colored glow root */}
                     <path
                       d={rootPath(questCX, vendorXs[i])}
                       fill="none"
@@ -330,18 +345,34 @@ export function DecisionTree() {
                       strokeWidth={3}
                       strokeLinecap="round"
                       style={{
-                        strokeDasharray: 500,
-                        strokeDashoffset: 500,
-                        animation: `drawRoot 1s ease forwards ${i * 0.18 + 0.4}s`,
-                        filter: `drop-shadow(0 0 5px ${color})`,
+                        strokeDasharray: 600,
+                        strokeDashoffset: 600,
+                        animation: `drawRoot 1.2s ease forwards ${i * 0.2 + 0.3}s`,
+                        filter: `drop-shadow(0 0 6px ${color})`,
                       }}
                     />
-                    {/* Energy pulse orb */}
-                    <circle r={5} fill={color} style={{ filter: "drop-shadow(0 0 7px currentColor)", opacity: 0.95 }}>
+                    {/* Energy pulse orb flowing DOWN */}
+                    <circle r={6} fill={color} style={{ filter: `drop-shadow(0 0 8px ${color})`, opacity: 0.9 }}>
                       <animateMotion
-                        dur={`${1.8 + i * 0.25}s`}
+                        dur={`${2.0 + i * 0.22}s`}
                         repeatCount="indefinite"
-                        begin={`${i * 0.18 + 1.5}s`}
+                        begin={`${i * 0.2 + 1.8}s`}
+                        keyPoints="0;1"
+                        keyTimes="0;1"
+                        calcMode="linear"
+                      >
+                        <mpath href={`#rootpath-${i}`} />
+                      </animateMotion>
+                    </circle>
+                    {/* Trailing glow orb */}
+                    <circle r={3} fill={color} style={{ filter: `drop-shadow(0 0 4px ${color})`, opacity: 0.5 }}>
+                      <animateMotion
+                        dur={`${2.0 + i * 0.22}s`}
+                        repeatCount="indefinite"
+                        begin={`${i * 0.2 + 2.0}s`}
+                        keyPoints="0;1"
+                        keyTimes="0;1"
+                        calcMode="linear"
                       >
                         <mpath href={`#rootpath-${i}`} />
                       </animateMotion>
@@ -353,7 +384,7 @@ export function DecisionTree() {
           )}
 
           {/* Quest node (top center) */}
-          <div style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 1 }}>
+          <div style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 2 }}>
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
@@ -361,14 +392,12 @@ export function DecisionTree() {
               className="pixel-panel flex flex-col items-center gap-2 px-4 py-3"
               style={{ minWidth: 160, background: "var(--parchment)" }}
             >
-              {activeQuest.animalType ? (
-                <SpriteHead animalType={activeQuest.animalType} size={48} />
-              ) : (
-                <span style={{ fontSize: 32 }}>🗺️</span>
-              )}
+              <span style={{ fontSize: 36 }}>
+                {ANIMAL_EMOJI[activeQuest.animalType as AnimalType] ?? "🗺️"}
+              </span>
               <div
                 className="font-pixel text-center"
-                style={{ fontSize: 7, color: "var(--wood-outer)", maxWidth: 150 }}
+                style={{ fontSize: 6, color: "var(--wood-outer)", maxWidth: 150, lineHeight: 1.8 }}
               >
                 {activeQuest.description.slice(0, 30)}{activeQuest.description.length > 30 ? "…" : ""}
               </div>
@@ -376,71 +405,66 @@ export function DecisionTree() {
           </div>
 
           {/* Vendor nodes (bottom row) */}
-          {questVendors.map((vendor: VendorDoc, i: number) => (
-            <motion.div
-              key={vendor._id}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 450, damping: 22, delay: i * 0.18 + 0.9 }}
-              style={{
-                position: "absolute",
-                top: VENDOR_TOP_Y,
-                left: vendorXs[i] - 64,
-                width: 128,
-                cursor: "pointer",
-                zIndex: 1,
-              }}
-              className="pixel-panel group"
-              onClick={() => { playClick(); router.push(`/vendor/${vendor._id}`); }}
-            >
-              {/* Stage color stripe */}
-              <div style={{ height: 4, background: STAGE_COLORS[vendor.stage as VendorStage] ?? "#888" }} />
-              <div className="p-2 text-center">
-                <div
-                  className="font-pixel"
-                  style={{ fontSize: 6, color: "var(--wood-outer)", lineHeight: 1.7 }}
-                >
-                  {vendor.companyName.slice(0, 14)}{vendor.companyName.length > 14 ? "…" : ""}
-                </div>
-                <div
-                  style={{
-                    fontSize: 7,
-                    color: STAGE_COLORS[vendor.stage as VendorStage] ?? "#888",
-                    fontFamily: "var(--font-pixel)",
-                    marginTop: 3,
-                  }}
-                >
-                  {(STAGE_LABELS[vendor.stage as VendorStage] ?? vendor.stage).toUpperCase()}
-                </div>
-              </div>
-              {/* Delete X on hover */}
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={(e) => { e.stopPropagation(); playClick(); setConfirmDeleteVendor(vendor._id); }}
-                className="absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: "#ef4444", color: "white", border: "2px solid #dc2626" }}
+          {questVendors.map((vendor: VendorDoc, i: number) => {
+            const color = ROOT_STAGE_COLORS[vendor.stage as VendorStage] ?? "#b8956a";
+            return (
+              <motion.div
+                key={vendor._id}
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 450, damping: 22, delay: i * 0.2 + 1.0 }}
+                style={{
+                  position: "absolute",
+                  top: VENDOR_TOP_Y,
+                  left: vendorXs[i] - 64,
+                  width: 128,
+                  cursor: "pointer",
+                  zIndex: 2,
+                }}
+                className="pixel-panel group"
+                onClick={() => { playClick(); router.push(`/vendor/${vendor._id}`); }}
               >
-                ✕
-              </motion.button>
-            </motion.div>
-          ))}
+                {/* Stage color stripe */}
+                <div style={{ height: 4, background: color, boxShadow: `0 0 8px ${color}` }} />
+                <div className="p-2 text-center">
+                  <div
+                    className="font-pixel"
+                    style={{ fontSize: 5, color: "var(--wood-outer)", lineHeight: 1.8 }}
+                  >
+                    {vendor.companyName.slice(0, 14)}{vendor.companyName.length > 14 ? "…" : ""}
+                  </div>
+                  <div
+                    className="font-pixel"
+                    style={{ fontSize: 5, color, marginTop: 3 }}
+                  >
+                    {(STAGE_LABELS[vendor.stage as VendorStage] ?? vendor.stage).toUpperCase()}
+                  </div>
+                </div>
+                {/* Delete X on hover */}
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => { e.stopPropagation(); playClick(); setConfirmDeleteVendor(vendor._id); }}
+                  className="absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ background: "#ef4444", color: "white", border: "2px solid #dc2626" }}
+                >
+                  ✕
+                </motion.button>
+              </motion.div>
+            );
+          })}
 
           {/* Empty state */}
           {questVendors.length === 0 && (
-            <div
-              className="text-center py-6 px-8"
-              style={{
-                position: "absolute",
-                top: VENDOR_TOP_Y + 20,
-                left: "50%",
-                transform: "translateX(-50%)",
-                color: "#7a5a3a",
-                fontFamily: "var(--font-nunito), sans-serif",
-                fontSize: 12,
-                whiteSpace: "nowrap",
-              }}
-            >
-              No vendors found yet for this quest.
+            <div style={{
+              position: "absolute",
+              top: VENDOR_TOP_Y + 20,
+              left: "50%",
+              transform: "translateX(-50%)",
+              textAlign: "center",
+            }}>
+              <div className="font-pixel" style={{ fontSize: 7, color: "#7a5a3a", lineHeight: 2 }}>
+                NO VENDORS YET.{"\n"}WALK TO HQ TO FIND SOME!
+              </div>
             </div>
           )}
         </div>
@@ -462,15 +486,12 @@ export function DecisionTree() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="rounded-3xl p-6 max-w-sm w-full mx-4"
-              style={{ background: "var(--cream)", border: "3px solid #ef4444" }}
+              className="pixel-panel p-6 max-w-sm w-full mx-4"
             >
               <div className="text-center mb-4">
                 <div className="text-3xl mb-2">🗑️</div>
-                <h3 className="text-sm font-extrabold" style={{ color: "var(--text)" }}>
-                  Delete this quest?
-                </h3>
-                <p className="text-xs font-semibold mt-1" style={{ color: "var(--muted)" }}>
+                <div className="font-pixel" style={{ fontSize: 7, color: "var(--wood-outer)" }}>DELETE THIS QUEST?</div>
+                <p className="text-xs font-semibold mt-2" style={{ color: "var(--muted)" }}>
                   This will also delete all vendors in this quest.
                 </p>
               </div>
@@ -478,10 +499,10 @@ export function DecisionTree() {
                 <motion.button
                   whileTap={{ scale: 0.96 }}
                   onClick={() => setConfirmDeleteQuest(null)}
-                  className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
-                  style={{ background: "var(--panel)", color: "var(--text)", border: "2px solid var(--border-game)" }}
+                  className="flex-1 pixel-btn"
+                  style={{ fontSize: 7, padding: "8px" }}
                 >
-                  Cancel
+                  CANCEL
                 </motion.button>
                 <motion.button
                   whileTap={{ scale: 0.96 }}
@@ -493,10 +514,10 @@ export function DecisionTree() {
                       setActiveQuestId(null as unknown as Id<"quests">);
                     }
                   }}
-                  className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
-                  style={{ background: "#ef4444", color: "white", border: "2px solid #dc2626" }}
+                  className="flex-1 pixel-btn"
+                  style={{ fontSize: 7, padding: "8px", background: "#8b2020", borderColor: "#4a0f0f", boxShadow: "0 4px 0 #2d0808" }}
                 >
-                  Delete
+                  DELETE
                 </motion.button>
               </div>
             </motion.div>
@@ -520,15 +541,12 @@ export function DecisionTree() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="rounded-3xl p-6 max-w-sm w-full mx-4"
-              style={{ background: "var(--cream)", border: "3px solid #ef4444" }}
+              className="pixel-panel p-6 max-w-sm w-full mx-4"
             >
               <div className="text-center mb-4">
                 <div className="text-3xl mb-2">🗑️</div>
-                <h3 className="text-sm font-extrabold" style={{ color: "var(--text)" }}>
-                  Remove this vendor?
-                </h3>
-                <p className="text-xs font-semibold mt-1" style={{ color: "var(--muted)" }}>
+                <div className="font-pixel" style={{ fontSize: 7, color: "var(--wood-outer)" }}>REMOVE THIS VENDOR?</div>
+                <p className="text-xs font-semibold mt-2" style={{ color: "var(--muted)" }}>
                   This vendor will be removed from the quest tree.
                 </p>
               </div>
@@ -536,10 +554,10 @@ export function DecisionTree() {
                 <motion.button
                   whileTap={{ scale: 0.96 }}
                   onClick={() => setConfirmDeleteVendor(null)}
-                  className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
-                  style={{ background: "var(--panel)", color: "var(--text)", border: "2px solid var(--border-game)" }}
+                  className="flex-1 pixel-btn"
+                  style={{ fontSize: 7, padding: "8px" }}
                 >
-                  Cancel
+                  CANCEL
                 </motion.button>
                 <motion.button
                   whileTap={{ scale: 0.96 }}
@@ -548,10 +566,10 @@ export function DecisionTree() {
                     await removeVendor({ vendorId: confirmDeleteVendor });
                     setConfirmDeleteVendor(null);
                   }}
-                  className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
-                  style={{ background: "#ef4444", color: "white", border: "2px solid #dc2626" }}
+                  className="flex-1 pixel-btn"
+                  style={{ fontSize: 7, padding: "8px", background: "#8b2020", borderColor: "#4a0f0f", boxShadow: "0 4px 0 #2d0808" }}
                 >
-                  Delete
+                  REMOVE
                 </motion.button>
               </div>
             </motion.div>

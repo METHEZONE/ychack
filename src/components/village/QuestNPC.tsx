@@ -160,8 +160,8 @@ export function QuestNPC({ quest, spawnX, spawnY, index, isNearby = false, onCli
               initial={{ opacity: 0, y: 4, scale: 0.85 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.85 }}
-              className="absolute whitespace-nowrap text-xs px-2.5 py-1 rounded-xl shadow-md z-30 font-extrabold"
-              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "2px solid var(--accent-hover)" }}
+              className="absolute whitespace-nowrap font-pixel shadow-md z-30"
+              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "3px solid var(--accent-hover)", boxShadow: "0 3px 0 var(--pixel-shadow)", padding: "4px 10px", fontSize: 7 }}
             >
               💬 E
             </motion.div>
@@ -175,11 +175,11 @@ export function QuestNPC({ quest, spawnX, spawnY, index, isNearby = false, onCli
               initial={{ opacity: 0, y: 4, scale: 0.85 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.85 }}
-              className="absolute whitespace-nowrap text-xs px-3 py-1.5 rounded-2xl shadow-md z-30"
-              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--cream)", color: "var(--text)", border: "2px solid var(--border-game)", fontWeight: 700 }}
+              className="absolute whitespace-nowrap font-pixel shadow-md z-30"
+              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--parchment)", color: "var(--wood-outer)", border: "3px solid var(--wood-mid)", boxShadow: "0 3px 0 var(--pixel-shadow)", padding: "4px 10px", fontSize: 6 }}
             >
               {bubbleText}
-              <div className="absolute top-full left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "5px solid var(--border-game)" }} />
+              <div className="absolute top-full left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "5px solid var(--wood-mid)" }} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -212,16 +212,16 @@ export function QuestNPC({ quest, spawnX, spawnY, index, isNearby = false, onCli
 
         {/* Name + quest label */}
         <span
-          className="text-xs px-2.5 py-1 rounded-2xl mt-1 font-extrabold truncate max-w-[120px] shadow-md"
-          style={{ background: color, color: "white", border: "2px solid rgba(255,255,255,0.4)" }}
+          className="font-pixel truncate mt-1"
+          style={{ background: color, color: "white", border: "3px solid rgba(0,0,0,0.25)", boxShadow: "0 3px 0 rgba(0,0,0,0.3)", padding: "3px 8px", fontSize: 7, display: "inline-block", maxWidth: 110 }}
         >
-          {quest.characterName ?? "Agent"}
+          {(quest.characterName ?? "AGENT").toUpperCase()}
         </span>
         <span
-          className="text-xs px-2 py-0.5 rounded-xl mt-0.5 font-bold truncate max-w-[120px]"
-          style={{ background: "rgba(255,255,255,0.85)", color: "var(--text)", border: "1.5px solid var(--border-game)" }}
+          className="font-pixel truncate mt-0.5"
+          style={{ background: "rgba(255,251,230,0.9)", color: "var(--wood-outer)", border: "2px solid var(--wood-mid)", padding: "2px 6px", fontSize: 5, display: "inline-block", maxWidth: 110 }}
         >
-          {quest.description.length > 20 ? quest.description.slice(0, 18) + "..." : quest.description}
+          {quest.description.length > 20 ? quest.description.slice(0, 18) + "…" : quest.description}
         </span>
       </motion.div>
     </motion.div>

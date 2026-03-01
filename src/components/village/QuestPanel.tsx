@@ -6,10 +6,10 @@ import { useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
+import { ANIMAL_EMOJI, AnimalType } from "@/lib/animals";
 import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
 import { playClick } from "@/lib/sounds";
 import { Doc } from "../../../convex/_generated/dataModel";
-import { SpriteHead } from "@/components/ui/SpriteHead";
 
 type QuestDoc = Doc<"quests">;
 type VendorDoc = Doc<"vendors">;
@@ -196,14 +196,9 @@ export function QuestPanel() {
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    {/* Sprite head or fallback icon */}
-                    <div style={{ flexShrink: 0, width: 24, overflow: "hidden" }}>
-                      {quest.animalType ? (
-                        <SpriteHead animalType={quest.animalType} size={24} />
-                      ) : (
-                        <span style={{ fontSize: 16 }}>🗺️</span>
-                      )}
-                    </div>
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>
+                      {ANIMAL_EMOJI[quest.animalType as AnimalType] ?? "🗺️"}
+                    </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         className="font-pixel"

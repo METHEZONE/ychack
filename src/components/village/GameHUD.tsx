@@ -21,6 +21,7 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
   const agentStatus = useForageStore((s) => s.agentStatus);
   const setTreeOpen = useForageStore((s) => s.setTreeOpen);
   const router = useRouter();
+  const user = useQuery(api.users.get, userId ? { userId } : "skip");
   const [soundOn, setSoundOn] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showWASD, setShowWASD] = useState(true);
@@ -65,12 +66,22 @@ export function GameHUD({ onHQOpen }: GameHUDProps) {
           }}
         >
           <span style={{ fontSize: 18 }}>🌿</span>
-          <span
-            className="font-pixel"
-            style={{ fontSize: 10, color: "#fff5e0", letterSpacing: "0.05em" }}
-          >
-            FORAGE
-          </span>
+          <div className="flex flex-col leading-none gap-0.5">
+            <span
+              className="font-pixel"
+              style={{ fontSize: 10, color: "#fff5e0", letterSpacing: "0.05em" }}
+            >
+              FORAGE
+            </span>
+            {user?.villageName && (
+              <span
+                className="font-pixel"
+                style={{ fontSize: 6, color: "rgba(255,245,224,0.65)", letterSpacing: "0.04em" }}
+              >
+                {user.villageName.slice(0, 14).toUpperCase()}
+              </span>
+            )}
+          </div>
         </div>
 
         <AnimatePresence>

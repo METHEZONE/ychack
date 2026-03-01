@@ -26,7 +26,7 @@ export function DemoSeed() {
   useEffect(() => {
     // If village is empty AND hasn't been seeded before (check DB), prompt
     if (user === undefined || vendors === undefined) return; // loading
-    if (vendors && vendors.length === 0 && !user?.demoSeeded && userId) {
+    if (vendors && vendors.length === 0 && !user?.demoSeeded && userId && user?.gomiOnboardingDone) {
       const t = setTimeout(() => setShowPrompt(true), 2000);
       return () => clearTimeout(t);
     }

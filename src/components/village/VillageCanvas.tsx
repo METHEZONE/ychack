@@ -260,15 +260,15 @@ export function VillageCanvas({
           {nearbyHQ && (
             <motion.div
               initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
-              className="whitespace-nowrap text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-lg"
-              style={{ background: "var(--accent)", color: "var(--text)", border: "2px solid var(--accent-hover)" }}
+              className="whitespace-nowrap font-pixel shadow-lg"
+              style={{ background: "var(--accent)", color: "var(--text)", border: "3px solid var(--accent-hover)", boxShadow: "0 3px 0 var(--pixel-shadow)", padding: "4px 10px", fontSize: 7 }}
             >
-              💬 Press E to enter HQ
+              💬 PRESS E
             </motion.div>
           )}
         </AnimatePresence>
         {!nearbyHQ && (
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full shadow-sm" style={{ background: "rgba(255,255,255,0.88)", color: "var(--primary-dark)", border: "1.5px solid var(--border-game)" }}>
+          <span className="font-pixel shadow-sm" style={{ background: "rgba(255,251,230,0.92)", color: "var(--wood-outer)", border: "2px solid var(--wood-mid)", padding: "2px 7px", fontSize: 6 }}>
             🏡 HQ
           </span>
         )}
@@ -289,10 +289,10 @@ export function VillageCanvas({
         {(nearbyQuestId || nearbyHQ || nearMayor) && (
           <motion.div
             initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-            className="absolute whitespace-nowrap text-xs font-extrabold px-2.5 py-1 rounded-xl shadow-md"
-            style={{ bottom: "calc(100% + 2px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "2px solid var(--accent-hover)" }}
+            className="absolute whitespace-nowrap font-pixel shadow-md"
+            style={{ bottom: "calc(100% + 2px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "3px solid var(--accent-hover)", boxShadow: "0 3px 0 var(--pixel-shadow)", padding: "4px 10px", fontSize: 7 }}
           >
-            💬 Press E
+            💬 E
           </motion.div>
         )}
       </div>
@@ -328,10 +328,10 @@ export function VillageCanvas({
           {nearMayor && (
             <motion.div
               initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
-              className="absolute whitespace-nowrap text-xs font-extrabold px-2.5 py-1 rounded-xl shadow-md"
-              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "2px solid var(--accent-hover)", zIndex: 30 }}
+              className="absolute whitespace-nowrap font-pixel shadow-md"
+              style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "var(--text)", border: "3px solid var(--accent-hover)", boxShadow: "0 3px 0 var(--pixel-shadow)", padding: "4px 10px", fontSize: 7, zIndex: 30 }}
             >
-              💬 Press E
+              💬 E
             </motion.div>
           )}
         </AnimatePresence>
@@ -340,14 +340,14 @@ export function VillageCanvas({
         ) : (
           <span style={{ fontSize: "2.8rem" }}>🐻</span>
         )}
-        <span className="text-xs px-2.5 py-1 rounded-2xl mt-1 font-extrabold shadow-md"
-          style={{ background: "#5BAD4E", color: "white", border: "2px solid rgba(255,255,255,0.4)" }}>
-          Gomi
+        <span className="font-pixel mt-1"
+          style={{ background: "#5BAD4E", color: "white", border: "3px solid #3d8a35", boxShadow: "0 3px 0 #1e4d1a", padding: "3px 8px", fontSize: 7, display: "inline-block" }}>
+          GOMI
         </span>
       </motion.div>
 
       {/* Empty village hint */}
-      {questNPCs.length === 0 && (
+      {questNPCs.length === 0 && !dialogueOpen && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: "80px", zIndex: 10 }}>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }}
