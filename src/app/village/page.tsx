@@ -26,15 +26,6 @@ const VillageCanvas = nextDynamic(
   { ssr: false }
 );
 
-export default function VillagePage() {
-  return (
-    <Suspense>
-      <VillagePageInner />
-    </Suspense>
-  );
-}
-
-
 function VillagePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
