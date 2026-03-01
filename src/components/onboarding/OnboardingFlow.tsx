@@ -214,7 +214,7 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
   const updateCompany = useMutation(api.users.updateCompanyData);
   const setGoogleId  = useMutation(api.users.setGoogleId);
   const setSessionToken = useMutation(api.users.setSessionToken);
-  const scrapeWebsite = useAction(api.actions.browserUse.scrapeWebsite);
+  const scrapeWebsite = useAction(api.actions.claude.scrapeAndAnalyzeWebsite);
   const analyzeProduct = useAction(api.actions.claude.analyzeProductNeed);
 
   const charType = "milo";
@@ -290,9 +290,10 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
     if (!website.trim()) return;
     setCompanyLoading(true);
     setCompanyError("");
+    const normalizedUrl = website.trim().match(/^https?:\/\//) ? website.trim() : `https://${website.trim()}`;
     try {
-      const scraped = await scrapeWebsite({ url: website });
-      handleExistingBizScrapeResult(scraped as { companyName?: string; description?: string } | null);
+      const scraped = await scrapeWebsite({ url: normalizedUrl });
+      handleExistingBizScrapeResult(scraped as { companyName?: string; description?: string } | null, normalizedUrl);
     } catch {
       setCompanyError("Couldn't scrape — continuing anyway.");
       setCompanyData({ isNewBusiness: false, website });
@@ -340,12 +341,12 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
   }
 
   // Store companyDescription from scrape result
-  function handleExistingBizScrapeResult(scraped: { companyName?: string; description?: string } | null) {
+  function handleExistingBizScrapeResult(scraped: { companyName?: string; description?: string } | null, normalizedUrl?: string) {
     setCompanyData({
       isNewBusiness: false,
       companyName: scraped?.companyName,
       companyDescription: scraped?.description,
-      website,
+      website: normalizedUrl ?? website,
     });
   }
 
