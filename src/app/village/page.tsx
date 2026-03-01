@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import nextDynamic from "next/dynamic";
@@ -27,6 +27,14 @@ const VillageCanvas = nextDynamic(
 );
 
 export default function VillagePage() {
+  return (
+    <Suspense>
+      <VillagePageInner />
+    </Suspense>
+  );
+}
+
+function VillagePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = useForageStore((s) => s.userId);
