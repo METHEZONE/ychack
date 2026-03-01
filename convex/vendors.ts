@@ -84,6 +84,7 @@ export const updateStage = mutation({
     agentmailInboxId: v.optional(v.string()),
     formFailureReason: v.optional(v.string()),
     formMissingFields: v.optional(v.array(v.string())),
+    browserSessionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { vendorId, ...updates } = args;

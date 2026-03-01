@@ -81,6 +81,7 @@ export default defineSchema({
     formFailureReason: v.optional(v.string()), // why form submission failed
     formMissingFields: v.optional(v.array(v.string())), // fields Browser Use couldn't fill
     autoReply: v.optional(v.boolean()), // auto-reply to vendor emails
+    browserSessionId: v.optional(v.string()), // Browser Use session ID for form submission
     positionX: v.optional(v.number()), // village x position
     positionY: v.optional(v.number()), // village y position
   })

@@ -148,40 +148,24 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
       transition={{ type: "spring", stiffness: 340, damping: 32 }}
       className="absolute bottom-0 left-0 right-0 z-40"
       style={{
-        background: "var(--cream)",
-        borderTop: "4px solid var(--primary)",
-        borderRadius: "20px 20px 0 0",
-        boxShadow: "0 -8px 32px rgba(0,0,0,0.18)",
+        background: "var(--parchment)",
+        borderTop: "4px solid var(--wood-outer)",
+        boxShadow: "inset 0 2px 0 var(--wood-light), 0 -6px 0 var(--pixel-shadow)",
         minHeight: 220,
       }}
     >
-      {/* HQ label + close */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+      {/* Header */}
+      <div className="pixel-header flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-lg shadow-sm"
-            style={{ background: "var(--primary)", border: "2.5px solid var(--primary-dark)" }}
-          >
-            🌿
-          </div>
-          <div>
-            <div
-              className="text-sm font-extrabold"
-              style={{ color: "var(--primary-dark)" }}
-            >
-              Forage Agent
-            </div>
-            <div className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
-              Headquarters
-            </div>
-          </div>
+          <span style={{ fontSize: 16 }}>🌿</span>
+          <span style={{ fontSize: 8 }}>FORAGE AGENT HQ</span>
         </div>
         <button
+          className="pixel-btn"
+          style={{ padding: "3px 8px", fontSize: 12 }}
           onClick={() => { playClick(); onClose(); }}
-          className="text-xl font-bold leading-none hover:opacity-60 transition-opacity"
-          style={{ color: "var(--muted)" }}
         >
-          ×
+          ✕
         </button>
       </div>
 
@@ -225,13 +209,8 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
                       whileTap={{ scale: 0.97 }}
                       onClick={() => handleChoiceClick(choice, msg.pendingQuery ?? "")}
                       disabled={isForaging || agentBusy || chatLoading}
-                      className="text-left text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40 transition-all"
-                      style={{
-                        background: "var(--cream)",
-                        color: "var(--primary-dark)",
-                        border: "2px solid var(--border-game)",
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-                      }}
+                      className="pixel-btn pixel-btn-green text-left disabled:opacity-40"
+                      style={{ fontSize: 8, padding: "6px 10px" }}
                     >
                       {choice}
                     </motion.button>
@@ -257,20 +236,15 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
 
       {/* Quick search chips (only when no conversation started) */}
       {chatMessages.length === 0 && (
-        <div className="px-5 pb-3 flex flex-wrap gap-2">
+        <div className="px-4 pb-3 flex flex-wrap gap-2">
           {QUICK_SEARCHES.map((s) => (
             <motion.button
               key={s}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.96 }}
+              whileTap={{ scale: 0.93 }}
               onClick={() => { playClick(); doForage(s); }}
               disabled={isForaging || agentBusy}
-              className="text-xs font-bold px-3 py-1.5 rounded-full disabled:opacity-50 transition-colors"
-              style={{
-                background: "var(--panel)",
-                color: "var(--primary-dark)",
-                border: "2px solid var(--border-game)",
-              }}
+              className="pixel-btn disabled:opacity-50"
+              style={{ fontSize: 8, padding: "5px 10px" }}
             >
               {s}
             </motion.button>
@@ -279,36 +253,25 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
       )}
 
       {/* Input + send */}
-      <div className="flex gap-2 px-5 pb-5">
+      <div className="flex gap-2 px-4 pb-4">
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          placeholder='e.g. "bamboo toothbrush suppliers in China"'
+          placeholder='e.g. bamboo toothbrush suppliers China'
           disabled={isForaging || agentBusy}
-          className="flex-1 px-4 py-2.5 text-sm outline-none disabled:opacity-50 font-semibold"
-          style={{
-            background: "var(--panel)",
-            border: "2.5px solid var(--border-game)",
-            borderRadius: 14,
-            color: "var(--text)",
-          }}
+          className="flex-1 px-3 py-2.5 text-sm disabled:opacity-50 pixel-input"
+          style={{ fontFamily: "var(--font-nunito), sans-serif", fontWeight: 600 }}
         />
         <motion.button
           onClick={() => handleSearch()}
           disabled={!input.trim() || isForaging || agentBusy}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.96 }}
-          className="px-4 py-2.5 text-sm font-extrabold disabled:opacity-40 rounded-2xl"
-          style={{
-            background: "var(--primary)",
-            color: "white",
-            border: "2.5px solid var(--primary-dark)",
-          }}
+          whileTap={{ scale: 0.93 }}
+          className="pixel-btn pixel-btn-green px-3 py-2 disabled:opacity-40"
         >
-          {isForaging ? "🌀" : "🔍 Forage"}
+          {isForaging ? "🌀" : "🔍 FORAGE"}
         </motion.button>
       </div>
 

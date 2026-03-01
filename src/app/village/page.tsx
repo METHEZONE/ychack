@@ -9,6 +9,7 @@ import nextDynamic from "next/dynamic";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { GameHUD } from "@/components/village/GameHUD";
+import { QuestPanel } from "@/components/village/QuestPanel";
 import { NPCDialogue } from "@/components/village/NPCDialogue";
 import { ForageSearch } from "@/components/village/ForageSearch";
 import { HQInterior } from "@/components/village/HQInterior";
@@ -45,7 +46,7 @@ function VillagePageInner() {
 
   const onboardingDone = user?.gomiOnboardingDone === true;
 
-  // Auth guard: try localStorage → cookie → redirect
+  // Auth guard
   useEffect(() => {
     initFromLocalStorage();
     const savedId = localStorage.getItem(LS_USER_ID);
@@ -54,7 +55,6 @@ function VillagePageInner() {
       return;
     }
     if (!savedId && !userId) {
-      // Try cookie-based session
       fetch("/api/auth/local-session")
         .then((r) => r.json())
         .then((data) => {
@@ -69,15 +69,14 @@ function VillagePageInner() {
     }
   }, [router, userId, setUserId, initFromLocalStorage]);
 
-  // Auto-open mandatory Gomi onboarding for new users
+  // Auto-open mandatory Gomi onboarding
   useEffect(() => {
     if (user && !user.gomiOnboardingDone) {
       setGomiCollectOpen(true);
     }
   }, [user]);
 
-  // Migration: auto-approve all existing vendors that don't have userApproved set
-  // (one-time migration from localStorage to Convex DB)
+  // Migration
   useEffect(() => {
     if (!vendors || vendors.length === 0) return;
     const migrated = localStorage.getItem("forage_migration_v2");
@@ -85,27 +84,23 @@ function VillagePageInner() {
     const toApprove = vendors
       .filter((v: VendorDoc) => v.userApproved === undefined || v.userApproved === null)
       .map((v: VendorDoc) => v._id as Id<"vendors">);
-    if (toApprove.length > 0) {
-      bulkApprove({ vendorIds: toApprove });
-    }
+    if (toApprove.length > 0) bulkApprove({ vendorIds: toApprove });
     localStorage.setItem("forage_migration_v2", "1");
   }, [vendors, bulkApprove]);
 
-  // Auto-open Gomi data collection when navigated with ?collectData=true
+  // Auto-open Gomi collect on ?collectData=true
   useEffect(() => {
     if (searchParams.get("collectData") === "true" && userId) {
       setGomiCollectOpen(true);
       setReturnVendorId(searchParams.get("returnVendor"));
-      // Clean URL params without navigation
       window.history.replaceState({}, "", "/village");
     }
   }, [searchParams, userId]);
 
-  // Escape closes all panels (but not mandatory onboarding)
+  // Escape closes panels
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        // Don't close Gomi collect if onboarding is mandatory
         if (gomiCollectOpen && !onboardingDone) return;
         setDialogueVendor(null);
         setForageSearchOpen(false);
@@ -117,12 +112,12 @@ function VillagePageInner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [gomiCollectOpen, onboardingDone]);
 
-  // Quest NPC clicked → navigate to tree view for that quest
   const handleSelectQuest = useCallback((questId: Id<"quests">) => {
     useForageStore.getState().setActiveQuestId(questId);
     router.push("/tree");
   }, [router]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleTalkToVendor = useCallback((vendor: VendorDoc) => {
     setForageSearchOpen(false);
     setHqOpen(false);
@@ -141,14 +136,11 @@ function VillagePageInner() {
     setForageSearchOpen(true);
   }, []);
 
-  // Called from HQInterior when user approves a vendor
   const handleApproveVendor = useCallback((vendor: VendorDoc) => {
     setHqOpen(false);
-    // Navigate to vendor detail
     router.push(`/vendor/${vendor._id}`);
   }, [router]);
 
-  // Called from VillageCanvas when player talks to Gomi
   const handleOpenGomiCollect = useCallback(() => {
     setDialogueVendor(null);
     setForageSearchOpen(false);
@@ -160,51 +152,58 @@ function VillagePageInner() {
   const dialogueOpen = !!dialogueVendor || forageSearchOpen || hqOpen || gomiCollectOpen;
 
   return (
-    <div className="w-full h-screen relative overflow-hidden" style={{ background: "var(--grass)" }}>
-      {/* Full-screen game canvas */}
-      <VillageCanvas
-        onSelectQuest={handleSelectQuest}
-        onOpenHQ={handleOpenHQ}
-        onOpenGomiCollect={handleOpenGomiCollect}
-        dialogueOpen={dialogueOpen}
-      />
+    <div className="w-full h-screen flex overflow-hidden" style={{ background: "var(--grass)" }}>
+      {/* ── Left: Quest panel ── */}
+      <QuestPanel />
 
-      {/* Floating HUD */}
-      <GameHUD onForageOpen={handleForageOpen} onHQOpen={handleOpenHQ} />
+      {/* ── Right: Game canvas + HUD ── */}
+      <div className="flex-1 relative overflow-hidden">
+        <VillageCanvas
+          onSelectQuest={handleSelectQuest}
+          onOpenHQ={handleOpenHQ}
+          onOpenGomiCollect={handleOpenGomiCollect}
+          dialogueOpen={dialogueOpen}
+        />
 
-      {/* Panels */}
-      <AnimatePresence>
-        {dialogueVendor && (
-          <NPCDialogue
-            key={dialogueVendor._id}
-            vendor={dialogueVendor}
-            onClose={() => setDialogueVendor(null)}
-          />
-        )}
-        {forageSearchOpen && !dialogueVendor && (
-          <ForageSearch
-            key="forage-search"
-            onClose={() => setForageSearchOpen(false)}
-          />
-        )}
-        {hqOpen && (
-          <HQInterior
-            key="hq-interior"
-            onClose={() => setHqOpen(false)}
-            onApprove={handleApproveVendor}
-          />
-        )}
-        {gomiCollectOpen && (
-          <GomiDataCollect
-            key="gomi-collect"
-            onClose={() => setGomiCollectOpen(false)}
-            isMandatory={!onboardingDone}
-          />
-        )}
-      </AnimatePresence>
+        {/* HUD overlay */}
+        <GameHUD onHQOpen={handleOpenHQ} />
 
-      <DemoSeed />
-      {onboardingDone && <VillageTutorial />}
+        {/* Panels */}
+        <AnimatePresence>
+          {dialogueVendor && (
+            <NPCDialogue
+              key={dialogueVendor._id}
+              vendor={dialogueVendor}
+              onClose={() => setDialogueVendor(null)}
+            />
+          )}
+          {forageSearchOpen && !dialogueVendor && (
+            <ForageSearch
+              key="forage-search"
+              onClose={() => setForageSearchOpen(false)}
+            />
+          )}
+          {hqOpen && (
+            <HQInterior
+              key="hq-interior"
+              onClose={() => setHqOpen(false)}
+              onApprove={handleApproveVendor}
+              onForageOpen={handleForageOpen}
+            />
+          )}
+          {gomiCollectOpen && (
+            <GomiDataCollect
+              key="gomi-collect"
+              onClose={() => setGomiCollectOpen(false)}
+              returnVendorId={returnVendorId}
+              isMandatory={!onboardingDone}
+            />
+          )}
+        </AnimatePresence>
+
+        <DemoSeed />
+        {onboardingDone && <VillageTutorial />}
+      </div>
     </div>
   );
 }

@@ -41,6 +41,8 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   }
   const profileIncomplete = missingFields.length > 0;
 
+  const getSessionDetails = useAction(api.actions.browserUse.getSessionDetails);
+
   const [negotiationDraft, setNegotiationDraft] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -54,6 +56,38 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   const [emailLooking, setEmailLooking] = useState(false);
   const [emailLookupSource, setEmailLookupSource] = useState("");
   const emailLookupRan = useRef(false);
+
+  // Browser Use session drawer
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false);
+  const [sessionDetails, setSessionDetails] = useState<{
+    id: string;
+    status: string;
+    output?: string;
+    liveUrl?: string;
+    totalCostUsd?: string;
+    steps?: Array<{
+      step?: number;
+      url?: string;
+      modelOutput?: string;
+      result?: Array<{ extracted_content?: string; error?: string | null; is_done?: boolean }>;
+    }>;
+  } | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+
+  async function handleViewSession() {
+    if (!vendor?.browserSessionId) return;
+    setSessionDrawerOpen(true);
+    if (sessionDetails) return; // already loaded
+    setSessionLoading(true);
+    try {
+      const data = await getSessionDetails({ sessionId: vendor.browserSessionId });
+      setSessionDetails(data);
+    } catch {
+      setSessionDetails(null);
+    } finally {
+      setSessionLoading(false);
+    }
+  }
 
   // Auto-extract contact email from vendor website when missing
   // Tries Tavily first (~2s), then falls back to Browser Use (~30s)
@@ -610,7 +644,7 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
           style={{ background: "#E8F5D0", border: "2.5px solid var(--primary)" }}
         >
           <span className="text-2xl">📋</span>
-          <div>
+          <div className="flex-1">
             <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>
               Contact form submitted!
             </div>
@@ -618,6 +652,134 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
               Your inquiry was sent via {vendor.companyName}&apos;s website contact form.
             </div>
           </div>
+          {vendor.browserSessionId && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => { playClick(); handleViewSession(); }}
+              className="flex-shrink-0 px-3 py-2 rounded-2xl text-xs font-extrabold flex items-center gap-1"
+              style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
+            >
+              🌐 View session →
+            </motion.button>
+          )}
+        </motion.div>
+      )}
+
+      {/* Browser Use session drawer */}
+      {sessionDrawerOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl p-5 mb-5"
+          style={{ background: "var(--cream)", border: "3px solid var(--border-game)" }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-extrabold tracking-wider flex items-center gap-2" style={{ color: "var(--primary-dark)" }}>
+              🌐 BROWSER AGENT SESSION
+              {sessionDetails?.totalCostUsd && (
+                <span className="font-semibold px-2 py-0.5 rounded-full text-xs" style={{ background: "var(--panel)", color: "var(--muted)" }}>
+                  ${sessionDetails.totalCostUsd}
+                </span>
+              )}
+            </h2>
+            <button onClick={() => setSessionDrawerOpen(false)} className="text-xs font-bold hover:opacity-60" style={{ color: "var(--muted)" }}>
+              ✕ Close
+            </button>
+          </div>
+
+          {sessionLoading && (
+            <div className="flex items-center gap-2 py-4 justify-center">
+              <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }} className="text-xl">🌿</motion.span>
+              <span className="text-sm font-semibold" style={{ color: "var(--muted)" }}>Loading session...</span>
+            </div>
+          )}
+
+          {!sessionLoading && !sessionDetails && (
+            <p className="text-sm font-semibold text-center py-4" style={{ color: "var(--muted)" }}>
+              Couldn&apos;t load session details.
+            </p>
+          )}
+
+          {!sessionLoading && sessionDetails && (
+            <div className="space-y-4">
+              {/* Status + links */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <span
+                  className="text-xs font-bold px-2.5 py-1 rounded-full"
+                  style={{
+                    background: sessionDetails.status === "finished" || sessionDetails.status === "completed" ? "#E8F5D0" : "#FFF3E0",
+                    color: sessionDetails.status === "finished" || sessionDetails.status === "completed" ? "var(--primary-dark)" : "#E65100",
+                    border: `1.5px solid ${sessionDetails.status === "finished" || sessionDetails.status === "completed" ? "var(--primary)" : "#FF9800"}`,
+                  }}
+                >
+                  {sessionDetails.status}
+                </span>
+                {sessionDetails.liveUrl && (
+                  <a
+                    href={sessionDetails.liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold hover:underline flex items-center gap-1"
+                    style={{ color: "var(--primary)" }}
+                  >
+                    🔗 View full replay in Browser Use →
+                  </a>
+                )}
+              </div>
+
+              {/* Output */}
+              {sessionDetails.output && (
+                <div className="rounded-2xl p-3" style={{ background: "var(--panel)", border: "1.5px solid var(--border-game)" }}>
+                  <div className="text-xs font-extrabold mb-1.5" style={{ color: "var(--muted)" }}>AGENT OUTPUT</div>
+                  <p className="text-sm font-semibold leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text)" }}>
+                    {sessionDetails.output}
+                  </p>
+                </div>
+              )}
+
+              {/* Steps */}
+              {sessionDetails.steps && sessionDetails.steps.length > 0 && (
+                <div>
+                  <div className="text-xs font-extrabold mb-2" style={{ color: "var(--muted)" }}>
+                    STEPS ({sessionDetails.steps.length})
+                  </div>
+                  <div className="space-y-2 max-h-80 overflow-y-auto scrollable">
+                    {sessionDetails.steps.map((step, i) => (
+                      <div key={i} className="rounded-2xl p-3" style={{ background: "var(--panel)", border: "1.5px solid var(--border-game)" }}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-extrabold flex-shrink-0"
+                            style={{ background: "var(--primary)", color: "white" }}
+                          >
+                            {step.step ?? i + 1}
+                          </span>
+                          {step.url && (
+                            <span className="text-xs font-semibold truncate" style={{ color: "var(--muted)" }}>
+                              {step.url}
+                            </span>
+                          )}
+                          {step.result?.some((r) => r.is_done) && (
+                            <span className="ml-auto text-xs font-bold" style={{ color: "var(--primary)" }}>✓ Done</span>
+                          )}
+                        </div>
+                        {step.modelOutput && (
+                          <p className="text-xs font-semibold leading-relaxed" style={{ color: "var(--text)" }}>
+                            {step.modelOutput.slice(0, 300)}{step.modelOutput.length > 300 ? "..." : ""}
+                          </p>
+                        )}
+                        {step.result?.map((r, j) => r.extracted_content && (
+                          <p key={j} className="text-xs font-semibold mt-1 leading-relaxed" style={{ color: "var(--primary-dark)" }}>
+                            → {r.extracted_content.slice(0, 200)}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </motion.div>
       )}
 

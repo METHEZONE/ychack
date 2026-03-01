@@ -202,7 +202,7 @@ export function ChatBar() {
                     content={msg.content}
                     choices={msg.choices}
                     metadata={msg.metadata as Record<string, unknown> | undefined}
-                    onChoiceSelect={handleChoiceSelect}
+                    onChoiceSelect={(choice) => handleChoiceSelect(choice, msg.metadata as Record<string, unknown> | undefined)}
                     isLatest={i === messages.length - 1}
                   />
                 ))

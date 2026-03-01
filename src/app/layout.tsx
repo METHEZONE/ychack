@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Nunito, Fredoka } from "next/font/google";
+import { Nunito, Fredoka, Press_Start_2P } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import "./globals.css";
@@ -16,6 +16,12 @@ const fredoka = Fredoka({
   weight: ["400", "600"],
 });
 
+const pressStart2P = Press_Start_2P({
+  variable: "--font-pixel",
+  subsets: ["latin"],
+  weight: "400",
+});
+
 export const metadata: Metadata = {
   title: "Forage — Find Vendors, Build Your Product",
   description:
@@ -30,7 +36,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${nunito.variable} ${fredoka.variable} antialiased`}>
+      <body className={`${nunito.variable} ${fredoka.variable} ${pressStart2P.variable} antialiased`}>
         <SessionProvider>
           <ConvexClientProvider>{children}</ConvexClientProvider>
         </SessionProvider>

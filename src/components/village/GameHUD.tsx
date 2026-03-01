@@ -12,36 +12,33 @@ import { Doc } from "../../../convex/_generated/dataModel";
 type VendorDoc = Doc<"vendors">;
 
 interface GameHUDProps {
-  onForageOpen: () => void;
   onHQOpen: () => void;
 }
 
-export function GameHUD({ onForageOpen, onHQOpen }: GameHUDProps) {
+export function GameHUD({ onHQOpen }: GameHUDProps) {
   const userId = useForageStore((s) => s.userId);
   const agentBusy = useForageStore((s) => s.agentBusy);
   const agentStatus = useForageStore((s) => s.agentStatus);
   const router = useRouter();
   const [soundOn, setSoundOn] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [showWASD, setShowWASD] = useState(true);
   const [bellShaking, setBellShaking] = useState(false);
   const prevUnreadRef = useRef(0);
 
   const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
-  const quests = useQuery(api.quests.listByUser, userId ? { userId } : "skip");
 
   useEffect(() => { setSoundOn(soundEnabled); }, []);
   useEffect(() => {
-    const t = setTimeout(() => setShowWASD(false), 8000);
+    const t = setTimeout(() => setShowWASD(false), 7000);
     return () => clearTimeout(t);
   }, []);
 
-  // Unread = vendors that replied but haven't been seen yet (using DB field)
   const unreadVendors = (vendors ?? []).filter(
     (v: VendorDoc) => v.stage === "replied" && !v.userSeen
   );
   const unreadCount = unreadVendors.length;
 
-  // Shake bell + play sound when new unread arrives
   useEffect(() => {
     if (unreadCount > prevUnreadRef.current) {
       setBellShaking(true);
@@ -51,122 +48,86 @@ export function GameHUD({ onForageOpen, onHQOpen }: GameHUDProps) {
     prevUnreadRef.current = unreadCount;
   }, [unreadCount]);
 
-  const activeQuest = quests?.find((q) => q.status === "active") ?? quests?.[0];
-
   return (
     <>
-      {/* Top-left: Logo + Quest */}
-      <div className="absolute top-4 left-4 z-30 flex flex-col gap-2 pointer-events-none">
-        <div className="flex items-center gap-2">
+      {/* ── Top-left: Logo + agent busy ── */}
+      <div className="absolute top-3 left-3 z-30 flex flex-col gap-1.5 pointer-events-none">
+        <div
+          className="flex items-center gap-2 px-3 py-2"
+          style={{
+            background: "var(--wood-header)",
+            border: "3px solid var(--wood-outer)",
+            boxShadow: "inset 0 0 0 1px var(--wood-light), 3px 3px 0 var(--pixel-shadow)",
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🌿</span>
           <span
-            className="text-2xl font-bold"
-            style={{
-              color: "var(--primary-dark)",
-              textShadow: "0 2px 6px rgba(255,255,255,0.9)",
-              fontFamily: "var(--font-fredoka), 'Fredoka One', cursive",
-            }}
+            className="font-pixel"
+            style={{ fontSize: 10, color: "#fff5e0", letterSpacing: "0.05em" }}
           >
-            🌿 Forage
+            FORAGE
           </span>
-          <AnimatePresence>
-            {agentBusy && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
-                style={{
-                  background: "var(--primary)",
-                  color: "white",
-                  border: "2px solid var(--primary-dark)",
-                  boxShadow: "0 2px 8px rgba(91,173,78,0.5)",
-                }}
-              >
-                <span className="w-2 h-2 rounded-full glow-pulse" style={{ background: "white" }} />
-                {agentStatus || "Working..."}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
-        {activeQuest && (
-          <div
-            className="text-xs font-bold px-2.5 py-1 rounded-xl pointer-events-none"
-            style={{
-              background: "rgba(255,255,255,0.88)",
-              color: "var(--primary-dark)",
-              backdropFilter: "blur(6px)",
-              border: "2px solid var(--border-game)",
-              maxWidth: 220,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            📋 {activeQuest.description}
-          </div>
-        )}
+
+        <AnimatePresence>
+          {agentBusy && (
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="flex items-center gap-2 px-3 py-1.5"
+              style={{
+                background: "var(--primary)",
+                border: "3px solid var(--primary-dark)",
+                boxShadow: "2px 2px 0 #1e4d1a",
+                fontFamily: "var(--font-pixel), monospace",
+                fontSize: 7,
+                color: "white",
+                letterSpacing: "0.04em",
+              }}
+            >
+              <span className="w-2 h-2 rounded-full glow-pulse" style={{ background: "white" }} />
+              {agentStatus || "WORKING..."}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Top-right: nav + bell + sound */}
-      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+      {/* ── Top-right: Quest Tree + Bell + Settings ── */}
+      <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
         <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
-          onClick={() => {
-            playClick();
-            localStorage.clear();
-            fetch("/api/auth/local-session", { method: "DELETE" }).catch(() => {});
-            router.push("/");
-          }}
-          className="px-3 py-2 rounded-2xl text-xs font-extrabold"
-          style={{
-            background: "rgba(255,255,255,0.88)",
-            color: "var(--muted)",
-            border: "2.5px solid var(--border-game)",
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          ← Home
-        </motion.button>
-
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
+          whileTap={{ scale: 0.93 }}
           onClick={() => { playClick(); router.push("/tree"); }}
-          className="px-3 py-2 rounded-2xl text-xs font-extrabold"
-          style={{
-            background: "rgba(255,255,255,0.88)",
-            color: "var(--primary-dark)",
-            border: "2.5px solid var(--border-game)",
-            backdropFilter: "blur(6px)",
-          }}
+          className="pixel-btn flex items-center gap-1.5 px-3 py-2"
         >
-          🌳 Quest Tree
+          <span style={{ fontSize: 13 }}>🌳</span>
+          <span style={{ fontSize: 7 }}>QUEST TREE</span>
         </motion.button>
 
-        {/* Notification bell */}
+        {/* Bell */}
         <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
-          animate={bellShaking ? { rotate: [0, -15, 15, -10, 10, -5, 5, 0] } : {}}
-          transition={{ duration: 0.6 }}
+          whileTap={{ scale: 0.93 }}
+          animate={bellShaking ? { rotate: [0, -15, 15, -10, 10, 0] } : {}}
+          transition={{ duration: 0.5 }}
           onClick={() => { playClick(); onHQOpen(); }}
-          className="relative w-9 h-9 rounded-full flex items-center justify-center text-base"
+          className="pixel-btn relative"
           style={{
-            background: unreadCount > 0 ? "var(--accent)" : "rgba(255,255,255,0.88)",
-            border: unreadCount > 0 ? "2.5px solid var(--accent-hover)" : "2.5px solid var(--border-game)",
-            backdropFilter: "blur(6px)",
+            padding: "8px 10px",
+            background: unreadCount > 0 ? "var(--accent)" : "var(--wood-mid)",
+            borderColor: unreadCount > 0 ? "#a07800" : "var(--wood-outer)",
+            boxShadow: unreadCount > 0 ? "0 4px 0 #6b5200" : "0 4px 0 var(--pixel-shadow)",
+            color: unreadCount > 0 ? "var(--wood-outer)" : "#fff5e0",
           }}
         >
-          🔔
+          <span style={{ fontSize: 14 }}>🔔</span>
           <AnimatePresence>
             {unreadCount > 0 && (
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 exit={{ scale: 0 }}
-                className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs font-extrabold"
-                style={{ background: "#ef4444", color: "white", fontSize: 9 }}
+                className="absolute -top-1.5 -right-1.5 flex items-center justify-center font-pixel"
+                style={{ width: 16, height: 16, background: "#ef4444", border: "2px solid #7f1d1d", color: "white", fontSize: 7 }}
               >
                 {unreadCount}
               </motion.div>
@@ -174,101 +135,74 @@ export function GameHUD({ onForageOpen, onHQOpen }: GameHUDProps) {
           </AnimatePresence>
         </motion.button>
 
+        {/* Settings */}
         <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
-          onClick={() => {
-            const next = !soundOn;
-            setSoundOn(next);
-            setSoundEnabled(next);
-          }}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-base"
-          style={{
-            background: "rgba(255,255,255,0.88)",
-            border: "2.5px solid var(--border-game)",
-            backdropFilter: "blur(6px)",
-          }}
+          whileTap={{ scale: 0.93 }}
+          onClick={() => { playClick(); setSettingsOpen((o) => !o); }}
+          className="pixel-btn"
+          style={{ padding: "8px 10px" }}
         >
-          {soundOn ? "🔊" : "🔇"}
+          <span style={{ fontSize: 14 }}>⚙️</span>
         </motion.button>
       </div>
 
-      {/* Bottom-right: vendor count */}
-      {vendors && vendors.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="absolute bottom-6 right-4 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-extrabold"
-          style={{
-            background: "rgba(255,255,255,0.88)",
-            color: "var(--primary-dark)",
-            border: "2.5px solid var(--border-game)",
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          🏘️ {vendors.length} villager{vendors.length !== 1 ? "s" : ""}
-        </motion.div>
-      )}
+      {/* ── Settings dropdown ── */}
+      <AnimatePresence>
+        {settingsOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="absolute top-14 right-3 z-40 pixel-panel"
+            style={{ minWidth: 186 }}
+          >
+            <div className="pixel-header">⚙️ SETTINGS</div>
+            <div className="p-3 flex flex-col gap-2">
+              <button
+                className="pixel-btn flex items-center gap-2 w-full px-3 py-2 text-left"
+                onClick={() => { const next = !soundOn; setSoundOn(next); setSoundEnabled(next); playClick(); }}
+              >
+                <span>{soundOn ? "🔊" : "🔇"}</span>
+                <span style={{ fontSize: 7 }}>{soundOn ? "SOUND ON" : "SOUND OFF"}</span>
+              </button>
+              <button
+                className="pixel-btn flex items-center gap-2 w-full px-3 py-2 text-left"
+                onClick={() => { playClick(); setSettingsOpen(false); router.push("/tree"); }}
+              >
+                <span>🌳</span>
+                <span style={{ fontSize: 7 }}>QUEST TREE</span>
+              </button>
+              <button
+                className="pixel-btn flex items-center gap-2 w-full px-3 py-2 text-left"
+                style={{ background: "#8b2020", borderColor: "#4a0f0f", boxShadow: "0 4px 0 #2d0808" }}
+                onClick={() => {
+                  playClick(); setSettingsOpen(false);
+                  localStorage.clear();
+                  fetch("/api/auth/local-session", { method: "DELETE" }).catch(() => {});
+                  router.push("/");
+                }}
+              >
+                <span>🚪</span>
+                <span style={{ fontSize: 7 }}>EXIT VILLAGE</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Bottom-left: Find Vendors + HQ buttons */}
-      <div className="absolute bottom-6 left-4 z-30 flex gap-2">
-        <motion.button
-          whileHover={{ scale: 1.06, y: -2 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => { playClick(); onForageOpen(); }}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-extrabold shadow-xl"
-          style={{
-            background: "var(--primary)",
-            color: "white",
-            border: "3px solid var(--primary-dark)",
-            boxShadow: "0 4px 20px rgba(91,173,78,0.45)",
-          }}
-        >
-          <span className="text-xl">🌿</span>
-          Find Vendors
-        </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.06, y: -2 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => { playClick(); onHQOpen(); }}
-          className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-extrabold shadow-xl relative"
-          style={{
-            background: "rgba(255,255,255,0.92)",
-            color: "var(--primary-dark)",
-            border: "3px solid var(--border-game)",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-          }}
-        >
-          🏡 HQ
-          {unreadCount > 0 && (
-            <span
-              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center font-extrabold"
-              style={{ background: "#ef4444", color: "white", fontSize: 9 }}
-            >
-              {unreadCount}
-            </span>
-          )}
-        </motion.button>
-      </div>
-
-      {/* WASD hint */}
+      {/* ── WASD hint ── */}
       <AnimatePresence>
         {showWASD && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 0.92, y: 0 }}
+            animate={{ opacity: 0.95, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            transition={{ delay: 1.2 }}
-            className="absolute bottom-20 right-4 z-30 text-center px-3 py-2 rounded-xl pointer-events-none"
-            style={{
-              background: "rgba(255,255,255,0.78)",
-              backdropFilter: "blur(6px)",
-              border: "2px solid var(--border-game)",
-            }}
+            transition={{ delay: 1 }}
+            className="absolute bottom-5 right-3 z-30 pixel-panel text-center"
+            style={{ padding: "8px 14px" }}
           >
-            <div className="text-xs font-extrabold" style={{ color: "var(--primary-dark)" }}>WASD to move</div>
-            <div className="text-xs font-semibold" style={{ color: "var(--muted)" }}>E / Space to talk</div>
+            <div className="font-pixel" style={{ fontSize: 7, color: "var(--wood-outer)" }}>WASD / ARROWS</div>
+            <div className="font-pixel" style={{ fontSize: 6, color: "var(--wood-mid)", marginTop: 4 }}>E / SPACE = TALK</div>
           </motion.div>
         )}
       </AnimatePresence>

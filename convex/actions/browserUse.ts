@@ -170,6 +170,7 @@ Return "success" if submitted, or "blocked: <reason>" if not.`.trim();
       vendorId: args.vendorId,
       stage: "contacted",
       formSubmitted: success,
+      browserSessionId: session.id,
     });
 
     if (success) {
@@ -182,7 +183,34 @@ Return "success" if submitted, or "blocked: <reason>" if not.`.trim();
       });
     }
 
-    return { success, output };
+    return { success, output, sessionId: session.id };
+  },
+});
+
+// ─── Get Browser Use session details (steps + output) ────────────────────────
+export const getSessionDetails = action({
+  args: { sessionId: v.string() },
+  handler: async (_ctx, args) => {
+    const res = await fetch(`${BASE}/sessions/${args.sessionId}`, {
+      headers: headers(),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      id: string;
+      status: string;
+      output?: string;
+      liveUrl?: string;
+      totalCostUsd?: string;
+      steps?: Array<{
+        id?: string;
+        step?: number;
+        url?: string;
+        screenshot?: string;
+        modelOutput?: string;
+        result?: Array<{ extracted_content?: string; error?: string | null; is_done?: boolean }>;
+      }>;
+    };
+    return data;
   },
 });
 

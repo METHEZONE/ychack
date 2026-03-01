@@ -12,6 +12,7 @@ import { Id } from "../../../convex/_generated/dataModel";
 interface GomiDataCollectProps {
   onClose: () => void;
   isMandatory?: boolean;
+  returnVendorId?: string | null;
 }
 
 interface CollectStep {

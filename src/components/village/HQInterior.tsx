@@ -17,6 +17,7 @@ type VendorDoc = Doc<"vendors">;
 interface HQInteriorProps {
   onClose: () => void;
   onApprove: (vendor: VendorDoc) => void;
+  onForageOpen?: () => void;
 }
 
 // Toast component
@@ -35,7 +36,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   );
 }
 
-export function HQInterior({ onClose }: HQInteriorProps) {
+export function HQInterior({ onClose, onForageOpen }: HQInteriorProps) {
   const router = useRouter();
   const userId = useForageStore((s) => s.userId);
   const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
@@ -131,24 +132,38 @@ export function HQInterior({ onClose }: HQInteriorProps) {
       onClick={(e) => { if (e.target === e.currentTarget) { playClick(); onClose(); } }}
     >
       <div
-        className="w-full max-w-lg mx-4 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
-        style={{ background: "var(--cream)", border: "4px solid var(--border-game)", maxHeight: "85vh" }}
+        className="w-full max-w-lg mx-4 pixel-panel flex flex-col"
+        style={{ maxHeight: "85vh", boxShadow: "inset 0 0 0 2px var(--wood-light), 6px 6px 0 var(--pixel-shadow)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ background: "var(--primary)", color: "white" }}>
+        <div className="pixel-header flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🏡</span>
-            <div>
-              <div className="font-extrabold text-sm">Forage HQ</div>
-              <div className="text-xs opacity-80">Dashboard & Task Manager</div>
-            </div>
+            <span style={{ fontSize: 18 }}>🏡</span>
+            <span style={{ fontSize: 9 }}>FORAGE HQ</span>
           </div>
-          <button onClick={() => { playClick(); onClose(); }} className="text-2xl leading-none opacity-80 hover:opacity-100">×</button>
+          <div className="flex items-center gap-2">
+            {onForageOpen && (
+              <button
+                className="pixel-btn pixel-btn-green flex items-center gap-1 px-3 py-1.5"
+                onClick={() => { playClick(); onClose(); onForageOpen(); }}
+              >
+                <span style={{ fontSize: 11 }}>🌿</span>
+                <span style={{ fontSize: 7 }}>FIND VENDORS</span>
+              </button>
+            )}
+            <button
+              className="pixel-btn"
+              style={{ padding: "4px 8px", fontSize: 14, lineHeight: 1 }}
+              onClick={() => { playClick(); onClose(); }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b-2" style={{ borderColor: "var(--border-game)" }}>
+        <div className="flex border-b-2 flex-shrink-0" style={{ borderColor: "var(--wood-outer)", background: "var(--parchment-dark)" }}>
           {([
             { key: "overview", label: "📊 Overview" },
             { key: "tasks", label: "📋 Tasks", count: tasks.length },
@@ -157,16 +172,17 @@ export function HQInterior({ onClose }: HQInteriorProps) {
             <button
               key={t.key}
               onClick={() => { playClick(); setTab(t.key); }}
-              className="flex-1 py-3 text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors"
+              className="flex-1 py-2.5 flex items-center justify-center gap-1.5 font-pixel transition-colors"
               style={{
-                background: tab === t.key ? "var(--panel)" : "transparent",
-                color: tab === t.key ? "var(--primary-dark)" : "var(--muted)",
-                borderBottom: tab === t.key ? "3px solid var(--primary)" : "3px solid transparent",
+                fontSize: 7,
+                background: tab === t.key ? "var(--parchment)" : "transparent",
+                color: tab === t.key ? "var(--wood-outer)" : "var(--wood-mid)",
+                borderBottom: tab === t.key ? "3px solid var(--wood-outer)" : "3px solid transparent",
               }}
             >
               {t.label}
               {"count" in t && t.count > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full font-extrabold" style={{ background: "var(--accent)", color: "var(--text)", fontSize: 9 }}>
+                <span className="px-1 font-pixel" style={{ background: "var(--accent)", color: "var(--wood-outer)", fontSize: 6, border: "1px solid #a07800" }}>
                   {t.count}
                 </span>
               )}
