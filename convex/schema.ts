@@ -58,7 +58,8 @@ export default defineSchema({
     positionY: v.optional(v.number()), // village y position
   })
     .index("by_quest", ["questId"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_inbox", ["agentmailInboxId"]),
 
   messages: defineTable({
     vendorId: v.id("vendors"),

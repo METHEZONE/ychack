@@ -100,3 +100,21 @@ body {
 .glow-pulse {
   animation: glowPulse 1.5s ease-in-out infinite;
 }
+
+/* Player walk bob */
+@keyframes playerBob {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+.player-walking .player-emoji {
+  animation: playerBob 0.36s ease-in-out infinite !important;
+}
+
+/* Typewriter cursor blink */
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.typewriter-cursor {
+  animation: cursorBlink 0.7s ease-in-out infinite;
+}

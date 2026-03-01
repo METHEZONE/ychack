@@ -17,17 +17,23 @@ http.route({
       return new Response("Invalid JSON", { status: 400 });
     }
 
-    // AgentMail webhook payload: { inbox_id, message: { from, subject, text, html } }
-    const inboxId = body.inbox_id as string;
-    const message = body.message as {
-      from?: string;
-      subject?: string;
-      text?: string;
-      html?: string;
-    } | undefined;
+    // AgentMail webhook payload: { eventType, message: { inboxId, from, subject, text, html, ... } }
+    const event = body as {
+      eventType?: string;
+      message?: {
+        inboxId?: string;
+        from?: string;
+        subject?: string;
+        text?: string;
+        html?: string;
+      };
+    };
+
+    const inboxId = event.message?.inboxId;
+    const message = event.message;
 
     if (!inboxId || !message) {
-      return new Response("Missing inbox_id or message", { status: 400 });
+      return new Response("Missing message.inboxId or message", { status: 400 });
     }
 
     const fromEmail = message.from ?? "";

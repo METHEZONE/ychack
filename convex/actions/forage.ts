@@ -54,7 +54,7 @@ export const forageForVendors = action({
 
     // 3. Get current vendor count for animal assignment
     const existingVendors = await ctx.runQuery(api.vendors.listByUser, { userId: args.userId });
-    let vendorIndex = existingVendors.length;
+    const startIndex = existingVendors.length;
 
     // 4. "Foraging..." status in chat
     await ctx.runMutation(api.chatMessages.create, {
@@ -63,7 +63,7 @@ export const forageForVendors = action({
       content: `🌿 Foraging for "${args.searchQuery}"... Searching the web now, hang tight!`,
     });
 
-    // 5. Tavily: research vendors (fast, ~2-3s vs Browser Use's 5-10min)
+    // 5. Tavily: research vendors (fast, ~2-3s)
     let rawVendors: Array<{
       companyName: string;
       website?: string;
@@ -99,95 +99,89 @@ export const forageForVendors = action({
       return;
     }
 
-    // 6. Per-vendor: create NPC → inbox → form fill → email
-    for (const raw of rawVendors) {
-      const { animalType, characterName } = assignAnimal(vendorIndex);
+    // 6. Process all vendors in parallel
+    const outreachMessage = (vendorName: string) =>
+      `Hi,\n\nWe came across ${vendorName} and are interested in sourcing ${args.searchQuery} for our brand.\n\nCould you share your pricing, minimum order quantity, and lead times? We're currently evaluating suppliers and ${vendorName} looks like a strong fit.\n\nLooking forward to hearing from you!\n\nBest,\n${contactName}\n${companyName}`;
 
-      const vendorId = await ctx.runMutation(api.vendors.create, {
-        questId,
-        userId: args.userId,
-        companyName: raw.companyName,
-        website: raw.website ?? undefined,
-        location: raw.location ?? undefined,
-        animalType,
-        characterName,
-      });
+    await Promise.all(
+      rawVendors.map(async (raw, i) => {
+        const { animalType, characterName } = assignAnimal(startIndex + i);
 
-      await ctx.runMutation(api.workflowNodes.create, {
-        questId,
-        vendorId,
-        stage: "discovered",
-        label: raw.companyName,
-        isRecommended: false,
-        isDead: false,
-        reason: raw.description ?? undefined,
-      });
+        // Create vendor record
+        const vendorId = await ctx.runMutation(api.vendors.create, {
+          questId: questId!,
+          userId: args.userId,
+          companyName: raw.companyName,
+          website: raw.website ?? undefined,
+          location: raw.location ?? undefined,
+          animalType,
+          characterName,
+        });
 
-      await ctx.runMutation(api.chatMessages.create, {
-        userId: args.userId,
-        role: "agent",
-        content: `Found **${raw.companyName}**${raw.location ? ` in ${raw.location}` : ""}! Moving into your village 🏡`,
-      });
-
-      // ── Create AgentMail inbox FIRST (its address becomes our reply-to) ──
-      let inboxId: string | null = null;
-      try {
-        const inbox = await ctx.runAction(api.actions.agentmail.createVendorInbox, {
+        // Create workflow node
+        await ctx.runMutation(api.workflowNodes.create, {
+          questId: questId!,
           vendorId,
-          vendorName: raw.companyName,
-        }) as { inboxId: string };
-        inboxId = inbox.inboxId;
-      } catch {
-        // inbox creation failed — continue without email tracking
-      }
+          stage: "discovered",
+          label: raw.companyName,
+          isRecommended: false,
+          isDead: false,
+          reason: raw.description ?? undefined,
+        });
 
-      const outreachEmail = inboxId ?? undefined;
-      const outreachMessage = `Hi,\n\nWe came across ${raw.companyName} and are interested in sourcing ${args.searchQuery} for our brand.\n\nCould you share your pricing, minimum order quantity, and lead times? We're currently evaluating suppliers and ${raw.companyName} looks like a strong fit.\n\nLooking forward to hearing from you!\n\nBest,\n${contactName}\n${companyName}`;
+        await ctx.runMutation(api.chatMessages.create, {
+          userId: args.userId,
+          role: "agent",
+          content: `Found **${raw.companyName}**${raw.location ? ` in ${raw.location}` : ""}! Moving into your village 🏡`,
+        });
 
-      // ── Fill inquiry form (use inbox email so replies route back to us) ──
-      if (raw.contactFormUrl && outreachEmail) {
+        // Create AgentMail inbox (its address becomes our reply-to)
+        let inboxId: string | null = null;
         try {
-          await ctx.runAction(api.actions.browserUse.fillContactForm, {
+          const inbox = await ctx.runAction(api.actions.agentmail.createVendorInbox, {
+            vendorId,
+            vendorName: raw.companyName,
+          }) as { inboxId: string };
+          inboxId = inbox.inboxId;
+        } catch {
+          // inbox creation failed — continue without email tracking
+        }
+
+        // Send email (if we have both inbox and vendor email)
+        if (raw.contactEmail && inboxId) {
+          try {
+            await ctx.runAction(api.actions.agentmail.sendEmail, {
+              vendorId,
+              inboxId,
+              to: raw.contactEmail,
+              subject: `Sourcing inquiry — ${args.searchQuery} | ${companyName}`,
+              body: outreachMessage(raw.companyName),
+            });
+            await ctx.runMutation(api.chatMessages.create, {
+              userId: args.userId,
+              role: "agent",
+              content: `📧 Follow-up email sent to **${raw.companyName}**`,
+            });
+          } catch {
+            // email failed — continue
+          }
+        }
+
+        // Schedule form fill as a background job (avoids Convex action timeout)
+        // Browser Use takes 2-3 min — we fire-and-forget via scheduler
+        if (raw.contactFormUrl && inboxId) {
+          await ctx.scheduler.runAfter(0, api.actions.browserUse.fillContactForm, {
             vendorId,
             formUrl: raw.contactFormUrl,
             companyName,
             contactName,
-            contactEmail: outreachEmail,
+            contactEmail: inboxId, // use inbox as reply-to
             productNeed: args.searchQuery,
-            message: outreachMessage,
+            message: outreachMessage(raw.companyName),
           });
-          await ctx.runMutation(api.chatMessages.create, {
-            userId: args.userId,
-            role: "agent",
-            content: `📋 Filled inquiry form for **${raw.companyName}**`,
-          });
-        } catch {
-          // form fill failed — continue
         }
-      }
-
-      // ── Email follow-up ──
-      if (raw.contactEmail && inboxId) {
-        try {
-          await ctx.runAction(api.actions.agentmail.sendEmail, {
-            vendorId,
-            inboxId,
-            to: raw.contactEmail,
-            subject: `Sourcing inquiry — ${args.searchQuery} | ${companyName}`,
-            body: outreachMessage,
-          });
-          await ctx.runMutation(api.chatMessages.create, {
-            userId: args.userId,
-            role: "agent",
-            content: `📧 Follow-up email sent to **${raw.companyName}**`,
-          });
-        } catch {
-          // email failed — continue
-        }
-      }
-
-      vendorIndex++;
-    }
+      })
+    );
 
     // 7. Final summary
     await ctx.runMutation(api.chatMessages.create, {

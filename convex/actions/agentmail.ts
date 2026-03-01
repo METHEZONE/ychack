@@ -153,9 +153,8 @@ export const handleInboundEmail = action({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    // Find vendor by inbox ID
-    const vendors = await ctx.runQuery(api.vendors.listAll);
-    const vendor = vendors.find((v) => v.agentmailInboxId === args.inboxId);
+    // Find vendor by inbox ID (indexed lookup)
+    const vendor = await ctx.runQuery(api.vendors.getByInboxId, { inboxId: args.inboxId });
     if (!vendor) {
       console.warn("Inbound email for unknown inbox:", args.inboxId);
       return;

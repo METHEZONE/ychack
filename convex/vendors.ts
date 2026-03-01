@@ -92,6 +92,16 @@ export const listAll = query({
   },
 });
 
+export const getByInboxId = query({
+  args: { inboxId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("vendors")
+      .withIndex("by_inbox", (q) => q.eq("agentmailInboxId", args.inboxId))
+      .first();
+  },
+});
+
 export const updatePosition = mutation({
   args: {
     vendorId: v.id("vendors"),

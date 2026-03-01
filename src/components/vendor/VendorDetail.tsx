@@ -23,10 +23,16 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   });
 
   const draftNegotiation = useAction(api.actions.claude.draftNegotiationEmail);
+  const sendEmailAction = useAction(api.actions.agentmail.sendEmail);
+  const createInbox = useAction(api.actions.agentmail.createVendorInbox);
   const updateStage = useMutation(api.vendors.updateStage);
 
   const [negotiationDraft, setNegotiationDraft] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editedDraft, setEditedDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
 
   if (vendor === undefined) {
     return (
@@ -59,6 +65,8 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
     if (!vendor) return;
     playNegotiate();
     setDrafting(true);
+    setEditMode(false);
+    setSendSuccess(false);
     try {
       const draft = await draftNegotiation({
         vendorName: vendor.companyName,
@@ -68,10 +76,63 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         userNeed: "sourcing inquiry",
       });
       setNegotiationDraft(draft);
+      setEditedDraft(draft);
       playChime();
     } finally {
       setDrafting(false);
     }
+  }
+
+  async function handleSendNow() {
+    if (!vendor || !negotiationDraft) return;
+    const body = editMode ? editedDraft : negotiationDraft;
+
+    if (!vendor.contactEmail) {
+      alert("No contact email found for this vendor. Try reaching out manually.");
+      return;
+    }
+
+    setSending(true);
+    try {
+      // Get or create AgentMail inbox for this vendor
+      let inboxId = vendor.agentmailInboxId ?? null;
+      if (!inboxId) {
+        const inbox = await createInbox({
+          vendorId: vendor._id,
+          vendorName: vendor.companyName,
+        }) as { inboxId: string };
+        inboxId = inbox.inboxId;
+      }
+
+      // Send the email
+      await sendEmailAction({
+        vendorId: vendor._id,
+        inboxId,
+        to: vendor.contactEmail,
+        subject: `Following up — sourcing inquiry for ${vendor.companyName}`,
+        body,
+        isDraft: false,
+      });
+
+      // Advance stage to negotiating
+      await updateStage({
+        vendorId: vendor._id,
+        stage: "negotiating",
+        emailSent: true,
+      });
+
+      playChime();
+      setSendSuccess(true);
+      setNegotiationDraft(null);
+      setEditMode(false);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function handleEditFirst() {
+    setEditMode(true);
+    setEditedDraft(negotiationDraft ?? "");
   }
 
   return (
@@ -233,6 +294,26 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
         </motion.button>
       </div>
 
+      {/* Send success banner */}
+      {sendSuccess && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl p-4 mb-5 flex items-center gap-3"
+          style={{ background: "#E8F5D0", border: "2.5px solid var(--primary)" }}
+        >
+          <span className="text-2xl">📬</span>
+          <div>
+            <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>
+              Email sent!
+            </div>
+            <div className="text-xs font-semibold" style={{ color: "var(--primary-dark)" }}>
+              Negotiation email sent to {vendor.companyName}. Stage → Negotiating.
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Negotiation draft */}
       {negotiationDraft && (
         <div
@@ -244,36 +325,58 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
               📝 NEGOTIATION DRAFT
             </h2>
             <button
-              onClick={() => setNegotiationDraft(null)}
+              onClick={() => { setNegotiationDraft(null); setEditMode(false); }}
               className="text-xs font-bold hover:opacity-60"
               style={{ color: "var(--muted)" }}
             >
               Discard
             </button>
           </div>
-          <div
-            className="text-sm whitespace-pre-wrap leading-relaxed mb-4 font-semibold"
-            style={{ color: "var(--text)" }}
-          >
-            {negotiationDraft}
-          </div>
+
+          {/* Draft body — read-only or editable */}
+          {editMode ? (
+            <textarea
+              value={editedDraft}
+              onChange={(e) => setEditedDraft(e.target.value)}
+              rows={10}
+              className="w-full text-sm leading-relaxed p-3 rounded-2xl mb-4 outline-none resize-none font-semibold"
+              style={{
+                background: "var(--panel)",
+                border: "2px solid var(--border-game)",
+                color: "var(--text)",
+              }}
+            />
+          ) : (
+            <div
+              className="text-sm whitespace-pre-wrap leading-relaxed mb-4 font-semibold"
+              style={{ color: "var(--text)" }}
+            >
+              {negotiationDraft}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.96 }}
-              className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
+              onClick={handleSendNow}
+              disabled={sending}
+              whileHover={{ scale: sending ? 1 : 1.03 }}
+              whileTap={{ scale: sending ? 1 : 0.96 }}
+              className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold disabled:opacity-50"
               style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
             >
-              ⚡ Send now
+              {sending ? "Sending..." : "⚡ Send now"}
             </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.96 }}
-              className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
-              style={{ background: "var(--panel)", color: "var(--primary-dark)", border: "2px solid var(--border-game)" }}
-            >
-              ✏️ Edit first
-            </motion.button>
+            {!editMode && (
+              <motion.button
+                onClick={handleEditFirst}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.96 }}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-extrabold"
+                style={{ background: "var(--panel)", color: "var(--primary-dark)", border: "2px solid var(--border-game)" }}
+              >
+                ✏️ Edit first
+              </motion.button>
+            )}
           </div>
         </div>
       )}

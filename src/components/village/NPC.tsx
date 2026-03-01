@@ -20,6 +20,7 @@ interface NPCProps {
   spawnX: number; // % of container width
   spawnY: number; // % of container height
   index: number;
+  isNearby?: boolean;
   onClick: () => void;
 }
 
@@ -39,7 +40,7 @@ const MOVE_DURATION = 2.2;   // seconds
 const IDLE_MIN = 2500;        // ms
 const IDLE_MAX = 5000;        // ms
 
-export function NPC({ vendor, spawnX, spawnY, index, onClick }: NPCProps) {
+export function NPC({ vendor, spawnX, spawnY, index, isNearby = false, onClick }: NPCProps) {
   const animalType = vendor.animalType as AnimalType;
   const stage = vendor.stage as VendorStage;
   const emoji = ANIMAL_EMOJI[animalType] ?? "🐾";
@@ -151,6 +152,29 @@ export function NPC({ vendor, spawnX, spawnY, index, onClick }: NPCProps) {
         initial={{ scale: 0, opacity: 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 20, delay: index * 0.1 }}
       >
+        {/* "Press E" indicator when player is nearby */}
+        <AnimatePresence>
+          {isNearby && !showBubble && (
+            <motion.div
+              initial={{ opacity: 0, y: 4, scale: 0.85 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.85 }}
+              transition={{ type: "spring", stiffness: 400, damping: 22 }}
+              className="absolute whitespace-nowrap text-xs px-2.5 py-1 rounded-xl shadow-md z-30 font-extrabold"
+              style={{
+                bottom: "calc(100% + 8px)",
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "var(--accent)",
+                color: "var(--text)",
+                border: "2px solid var(--accent-hover)",
+              }}
+            >
+              💬 E
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Speech bubble */}
         <AnimatePresence>
           {showBubble && (
