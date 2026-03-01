@@ -1,11 +1,11 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
 
 const http = httpRouter();
 
-// AgentMail webhook — called when a vendor replies to an email
+// AgentMail webhook — fires when a vendor replies to our email
+// Register this URL in AgentMail dashboard: https://optimistic-armadillo-182.convex.site/agentmail-webhook
 http.route({
   path: "/agentmail-webhook",
   method: "POST",
@@ -17,27 +17,29 @@ http.route({
       return new Response("Invalid JSON", { status: 400 });
     }
 
-    // AgentMail sends: { inbox_id, message: { from, subject, text, html } }
+    // AgentMail webhook payload: { inbox_id, message: { from, subject, text, html } }
     const inboxId = body.inbox_id as string;
     const message = body.message as {
       from?: string;
       subject?: string;
       text?: string;
       html?: string;
-    };
+    } | undefined;
 
     if (!inboxId || !message) {
-      return new Response("Missing fields", { status: 400 });
+      return new Response("Missing inbox_id or message", { status: 400 });
     }
 
-    // Find vendor by agentmailInboxId
-    const vendors = await ctx.runQuery(api.vendors.listByUser, {
-      userId: "placeholder" as Id<"users">, // will be replaced with actual lookup
-    });
+    const fromEmail = message.from ?? "";
+    const subject = message.subject ?? "(no subject)";
+    const bodyText = message.text ?? message.html ?? "";
 
-    // TODO: add a listByInboxId query — for now, search manually
-    // This is a stub that will be wired up properly
-    console.log("AgentMail webhook received:", { inboxId, message });
+    await ctx.runAction(api.actions.agentmail.handleInboundEmail, {
+      inboxId,
+      fromEmail,
+      subject,
+      body: bodyText,
+    });
 
     return new Response("OK", { status: 200 });
   }),

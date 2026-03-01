@@ -12,6 +12,7 @@ import type * as actions_agentmail from "../actions/agentmail.js";
 import type * as actions_browserUse from "../actions/browserUse.js";
 import type * as actions_claude from "../actions/claude.js";
 import type * as actions_forage from "../actions/forage.js";
+import type * as actions_tavily from "../actions/tavily.js";
 import type * as chatMessages from "../chatMessages.js";
 import type * as demo from "../demo.js";
 import type * as http from "../http.js";
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   "actions/browserUse": typeof actions_browserUse;
   "actions/claude": typeof actions_claude;
   "actions/forage": typeof actions_forage;
+  "actions/tavily": typeof actions_tavily;
   chatMessages: typeof chatMessages;
   demo: typeof demo;
   http: typeof http;

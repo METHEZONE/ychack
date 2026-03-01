@@ -26,8 +26,7 @@ const NPC_NAMES: Record<AnimalType, string[]> = {
 
 function assignAnimal(index: number): { animalType: AnimalType; characterName: string } {
   const animalType = ANIMAL_TYPES[index % ANIMAL_TYPES.length];
-  const names = NPC_NAMES[animalType];
-  const characterName = names[Math.floor(index / ANIMAL_TYPES.length) % names.length];
+  const characterName = NPC_NAMES[animalType][Math.floor(index / ANIMAL_TYPES.length) % 4];
   return { animalType, characterName };
 }
 
@@ -38,7 +37,13 @@ export const forageForVendors = action({
     searchQuery: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Get or create quest
+    // 1. Fetch user data for personalized outreach
+    const user = await ctx.runQuery(api.users.get, { userId: args.userId });
+    const contactName = user?.name ?? "Founder";
+    const companyName = user?.companyName ?? "Our Company";
+    const companyDescription = user?.companyDescription ?? "";
+
+    // 2. Get or create quest
     let questId = args.questId;
     if (!questId) {
       questId = await ctx.runMutation(api.quests.create, {
@@ -47,36 +52,34 @@ export const forageForVendors = action({
       });
     }
 
-    // 2. Get current vendor count for animal assignment
-    const existingVendors = await ctx.runQuery(api.vendors.listByUser, {
-      userId: args.userId,
-    });
+    // 3. Get current vendor count for animal assignment
+    const existingVendors = await ctx.runQuery(api.vendors.listByUser, { userId: args.userId });
     let vendorIndex = existingVendors.length;
 
-    // 3. "Foraging..." status in chat
+    // 4. "Foraging..." status in chat
     await ctx.runMutation(api.chatMessages.create, {
       userId: args.userId,
       role: "agent",
       content: `🌿 Foraging for "${args.searchQuery}"... Searching the web now, hang tight!`,
     });
 
-    // 4. Browser Use: find vendors
+    // 5. Tavily: research vendors (fast, ~2-3s vs Browser Use's 5-10min)
     let rawVendors: Array<{
       companyName: string;
       website?: string;
-      location?: string;
+      location?: string | null;
       hasContactForm?: boolean;
-      contactFormUrl?: string;
-      contactEmail?: string;
-      description?: string;
+      contactFormUrl?: string | null;
+      contactEmail?: string | null;
+      description?: string | null;
     }> = [];
 
     try {
-      rawVendors = await ctx.runAction(api.actions.browserUse.findVendors, {
-        questId,
+      rawVendors = await ctx.runAction(api.actions.tavily.researchVendors, {
         searchQuery: args.searchQuery,
+        companyContext: companyDescription || `Looking to source: ${args.searchQuery}`,
       });
-    } catch {
+    } catch (e) {
       await ctx.runMutation(api.chatMessages.create, {
         userId: args.userId,
         role: "agent",
@@ -96,7 +99,7 @@ export const forageForVendors = action({
       return;
     }
 
-    // 5. For each vendor: create in DB + chat update + outreach
+    // 6. Per-vendor: create NPC → inbox → form fill → email
     for (const raw of rawVendors) {
       const { animalType, characterName } = assignAnimal(vendorIndex);
 
@@ -104,13 +107,12 @@ export const forageForVendors = action({
         questId,
         userId: args.userId,
         companyName: raw.companyName,
-        website: raw.website,
-        location: raw.location,
+        website: raw.website ?? undefined,
+        location: raw.location ?? undefined,
         animalType,
         characterName,
       });
 
-      // Workflow node for decision tree
       await ctx.runMutation(api.workflowNodes.create, {
         questId,
         vendorId,
@@ -118,58 +120,66 @@ export const forageForVendors = action({
         label: raw.companyName,
         isRecommended: false,
         isDead: false,
-        reason: raw.description,
+        reason: raw.description ?? undefined,
       });
 
-      // Real-time chat update — vendor appears in village
       await ctx.runMutation(api.chatMessages.create, {
         userId: args.userId,
         role: "agent",
-        content: `Found **${raw.companyName}**${raw.location ? ` in ${raw.location}` : ""}! They're moving into your village. 🏡`,
+        content: `Found **${raw.companyName}**${raw.location ? ` in ${raw.location}` : ""}! Moving into your village 🏡`,
       });
 
-      // Form outreach
-      if (raw.contactFormUrl) {
+      // ── Create AgentMail inbox FIRST (its address becomes our reply-to) ──
+      let inboxId: string | null = null;
+      try {
+        const inbox = await ctx.runAction(api.actions.agentmail.createVendorInbox, {
+          vendorId,
+          vendorName: raw.companyName,
+        }) as { inboxId: string };
+        inboxId = inbox.inboxId;
+      } catch {
+        // inbox creation failed — continue without email tracking
+      }
+
+      const outreachEmail = inboxId ?? undefined;
+      const outreachMessage = `Hi,\n\nWe came across ${raw.companyName} and are interested in sourcing ${args.searchQuery} for our brand.\n\nCould you share your pricing, minimum order quantity, and lead times? We're currently evaluating suppliers and ${raw.companyName} looks like a strong fit.\n\nLooking forward to hearing from you!\n\nBest,\n${contactName}\n${companyName}`;
+
+      // ── Fill inquiry form (use inbox email so replies route back to us) ──
+      if (raw.contactFormUrl && outreachEmail) {
         try {
           await ctx.runAction(api.actions.browserUse.fillContactForm, {
             vendorId,
             formUrl: raw.contactFormUrl,
-            companyName: "Your Company",
+            companyName,
+            contactName,
+            contactEmail: outreachEmail,
             productNeed: args.searchQuery,
-            contactName: "Founder",
-            contactEmail: "hello@forage.ai",
-            message: `Hi! We're interested in sourcing ${args.searchQuery}. Could you share your pricing, MOQ, and lead time? We're evaluating a few suppliers right now.`,
+            message: outreachMessage,
           });
           await ctx.runMutation(api.chatMessages.create, {
             userId: args.userId,
             role: "agent",
-            content: `📋 Filled inquiry form for ${raw.companyName}!`,
+            content: `📋 Filled inquiry form for **${raw.companyName}**`,
           });
         } catch {
           // form fill failed — continue
         }
       }
 
-      // Email outreach
-      if (raw.contactEmail) {
+      // ── Email follow-up ──
+      if (raw.contactEmail && inboxId) {
         try {
-          const inbox = await ctx.runAction(api.actions.agentmail.createVendorInbox, {
-            vendorId,
-            vendorName: raw.companyName,
-          }) as { inboxId: string; address: string };
-
           await ctx.runAction(api.actions.agentmail.sendEmail, {
             vendorId,
-            inboxId: inbox.inboxId,
+            inboxId,
             to: raw.contactEmail,
-            subject: `Sourcing inquiry — ${args.searchQuery}`,
-            body: `Hi,\n\nWe came across ${raw.companyName} and are interested in sourcing ${args.searchQuery} for our product.\n\nCould you share your pricing, minimum order quantity, and lead times?\n\nLooking forward to hearing from you!\n\nBest,\nFounder\n\nSent via Forage`,
+            subject: `Sourcing inquiry — ${args.searchQuery} | ${companyName}`,
+            body: outreachMessage,
           });
-
           await ctx.runMutation(api.chatMessages.create, {
             userId: args.userId,
             role: "agent",
-            content: `📧 Follow-up email sent to ${raw.companyName}!`,
+            content: `📧 Follow-up email sent to **${raw.companyName}**`,
           });
         } catch {
           // email failed — continue
@@ -179,11 +189,11 @@ export const forageForVendors = action({
       vendorIndex++;
     }
 
-    // 6. Final summary
+    // 7. Final summary
     await ctx.runMutation(api.chatMessages.create, {
       userId: args.userId,
       role: "agent",
-      content: `All done! Found ${rawVendors.length} vendors and reached out to all of them. Check your village — new neighbors have moved in! 🎉`,
+      content: `All done! Found **${rawVendors.length} vendors** and reached out to all of them. Check your village — new neighbors moved in! 🎉`,
       choices: ["Show decision tree", "Negotiate with top vendor", "Find more vendors"],
     });
   },
