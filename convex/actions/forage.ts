@@ -42,6 +42,7 @@ export const forageForVendors = action({
     const contactName = user?.name ?? "Founder";
     const companyName = user?.companyName ?? "Our Company";
     const companyDescription = user?.companyDescription ?? "";
+    const userEmail = user?.email ?? null;
 
     // 2. Get or create quest
     let questId = args.questId;
@@ -183,7 +184,20 @@ export const forageForVendors = action({
       })
     );
 
-    // 7. Final summary
+    // 7. Send confirmation email to user
+    if (userEmail) {
+      try {
+        await ctx.runAction(api.actions.agentmail.sendConfirmationEmail, {
+          to: userEmail,
+          searchQuery: args.searchQuery,
+          vendorNames: rawVendors.map((v) => v.companyName),
+        });
+      } catch {
+        // confirmation email failed — non-critical, continue
+      }
+    }
+
+    // 8. Final summary
     await ctx.runMutation(api.chatMessages.create, {
       userId: args.userId,
       role: "agent",

@@ -10,35 +10,25 @@ function getClient() {
   return new AgentMailClient({ apiKey: process.env.AGENTMAIL_API_KEY });
 }
 
-// Slugify vendor name → inbox username (e.g. "Intelligent Blends" → "forage-intelligent-blends")
-function toInboxUsername(vendorName: string): string {
-  return "forage-" + vendorName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
-}
+// Master inbox — shared across all vendor outreach to avoid per-inbox limits.
+// Replies are matched by vendorId embedded in the subject line.
+const MASTER_INBOX = "zone@agentmail.to";
 
-// ─── Create a per-vendor inbox ────────────────────────────────────────────────
+// ─── Get or return master inbox (no creation needed) ─────────────────────────
 export const createVendorInbox = action({
   args: {
     vendorId: v.id("vendors"),
     vendorName: v.string(),
   },
   handler: async (ctx, args) => {
-    const mail = getClient();
-
-    const inbox = await mail.inboxes.create({
-      username: toInboxUsername(args.vendorName),
-      displayName: "Forage Agent",
-    });
-
-    // inboxId IS the full email address (e.g. forage-acme@agentmail.to)
-    const inboxId = inbox.inboxId;
-
+    // Use the shared master inbox; store it on the vendor record
     await ctx.runMutation(api.vendors.updateStage, {
       vendorId: args.vendorId,
       stage: "contacted",
-      agentmailInboxId: inboxId,
+      agentmailInboxId: MASTER_INBOX,
     });
 
-    return { inboxId };
+    return { inboxId: MASTER_INBOX };
   },
 });
 
@@ -98,25 +88,17 @@ export const outreachVendor = action({
   handler: async (ctx, args) => {
     const mail = getClient();
 
-    // 1. Create dedicated inbox
-    const inbox = await mail.inboxes.create({
-      username: toInboxUsername(args.vendorName),
-      displayName: "Forage Agent",
-    });
-    const inboxId = inbox.inboxId;
-
-    // 2. Send follow-up email
-    await mail.inboxes.messages.send(inboxId, {
+    // Send from master inbox
+    await mail.inboxes.messages.send(MASTER_INBOX, {
       to: [args.vendorEmail],
       subject: `Partnership Inquiry — ${args.userCompanyName}`,
       text: args.emailBody,
     });
 
-    // 3. Update Convex
     await ctx.runMutation(api.vendors.updateStage, {
       vendorId: args.vendorId,
       stage: "contacted",
-      agentmailInboxId: inboxId,
+      agentmailInboxId: MASTER_INBOX,
       emailSent: true,
     });
 
@@ -129,7 +111,7 @@ export const outreachVendor = action({
       subject: `Partnership Inquiry — ${args.userCompanyName}`,
     });
 
-    return { inboxId, sent: true };
+    return { inboxId: MASTER_INBOX, sent: true };
   },
 });
 
@@ -140,6 +122,38 @@ export const listInboxMessages = action({
     const mail = getClient();
     const data = await mail.inboxes.messages.list(args.inboxId);
     return data.messages ?? [];
+  },
+});
+
+// ─── Send confirmation email to the user after outreach ──────────────────────
+export const sendConfirmationEmail = action({
+  args: {
+    to: v.string(),
+    searchQuery: v.string(),
+    vendorNames: v.array(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const mail = getClient();
+
+    const vendorList = args.vendorNames.map((n, i) => `${i + 1}. ${n}`).join("\n");
+    const body = [
+      `Your Forage agent just sent sourcing inquiries for: "${args.searchQuery}"`,
+      "",
+      `Vendors contacted:`,
+      vendorList,
+      "",
+      "You'll see replies in your Forage village as vendors respond. 🌿",
+      "",
+      "— Forage Agent",
+    ].join("\n");
+
+    await mail.inboxes.messages.send(MASTER_INBOX, {
+      to: [args.to],
+      subject: `✅ Forage sent ${args.vendorNames.length} inquiries for "${args.searchQuery}"`,
+      text: body,
+    });
+
+    return { sent: true };
   },
 });
 

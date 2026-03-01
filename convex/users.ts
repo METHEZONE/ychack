@@ -28,6 +28,7 @@ export const get = query({
 export const updateCompanyData = mutation({
   args: {
     userId: v.id("users"),
+    email: v.optional(v.string()),
     companyName: v.optional(v.string()),
     companyDescription: v.optional(v.string()),
     website: v.optional(v.string()),
