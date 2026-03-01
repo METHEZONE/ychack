@@ -58,6 +58,7 @@ export const forageForVendors = action({
         animalType: questAnimal,
         characterName: questCharName,
       });
+      if (!questId) throw new Error("Failed to create quest");
     }
 
     // 3. Detect category + get current vendor count for animal assignment

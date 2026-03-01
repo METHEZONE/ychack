@@ -51,6 +51,11 @@ export function ChatBar() {
   async function handleChoiceSelect(choice: string, metadata?: Record<string, unknown>) {
     if (!userId) return;
 
+    // approve_reply: skip — just dismiss without sending
+    if (metadata?.action === "approve_reply" && choice === "Skip for now") {
+      return; // draft stays saved, user can send later from message thread
+    }
+
     // approve_reply: send the draft without going through the normal chat flow
     if (metadata?.action === "approve_reply" && choice === "Send reply ✓") {
       setAgentBusy(true, "Sending reply...");

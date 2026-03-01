@@ -57,7 +57,7 @@ export function DecisionTree() {
     ? activeQuestId
     : quests[0]._id;
 
-  const activeQuest: QuestDoc = quests.find((q: QuestDoc) => q._id === resolvedQuestId)!;
+  const activeQuest = quests.find((q: QuestDoc) => q._id === resolvedQuestId) ?? quests[0];
 
   // Get vendors for active quest directly (no workflowNodes dependency)
   const questVendors = (vendors ?? []).filter(
@@ -242,7 +242,7 @@ export function DecisionTree() {
                 <div>
                   {recommendedVendorId && (
                     <div className="text-sm font-extrabold mb-1" style={{ color: "var(--primary-dark)" }}>
-                      Best pick: {questVendors.find((v: VendorDoc) => v._id === recommendedVendorId)?.companyName}
+                      Best pick: {questVendors.find((v: VendorDoc) => v._id === recommendedVendorId)?.companyName ?? "a vendor"}
                     </div>
                   )}
                   <div className="text-xs font-semibold leading-relaxed" style={{ color: "var(--text)" }}>
