@@ -134,6 +134,17 @@ export const bulkApprove = mutation({
   },
 });
 
+// Only save the inbox ID — does NOT change stage
+export const setInboxId = mutation({
+  args: {
+    vendorId: v.id("vendors"),
+    agentmailInboxId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.vendorId, { agentmailInboxId: args.agentmailInboxId });
+  },
+});
+
 export const toggleAutoReply = mutation({
   args: {
     vendorId: v.id("vendors"),

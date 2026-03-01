@@ -204,10 +204,11 @@ export const researchVendors = action({
     return filtered.map((result) => {
       const content = extractMap.get(result.url) ?? result.content;
 
-      // Email: skip noreply / privacy@  addresses
+      // Email: skip true no-reply addresses (noreply, privacy, unsubscribe)
+      // Keep info@, support@, contact@ — these are legitimate B2B vendor contacts
       const emailMatches = content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) ?? [];
       const contactEmail =
-        emailMatches.find((e) => !/noreply|no-reply|privacy|info@|support@/i.test(e)) ??
+        emailMatches.find((e) => !/noreply|no-reply|privacy@|unsubscribe/i.test(e)) ??
         emailMatches[0] ??
         null;
 

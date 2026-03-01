@@ -34,9 +34,11 @@ export function detectCategory(searchQuery: string): VendorCategory {
   return "other";
 }
 
-// Embed vendorId in subject so we can match replies unambiguously
+// Embed vendorId in subject so we can match replies unambiguously (idempotent)
 function subjectWithRef(subject: string, vendorId: string): string {
-  return `${subject} [ref:${vendorId}]`;
+  const tag = `[ref:${vendorId}]`;
+  if (subject.includes(tag)) return subject;
+  return `${subject} ${tag}`;
 }
 
 // Parse vendorId from a reply subject ("Re: ... [ref:abc123]")
@@ -56,9 +58,9 @@ export const createVendorInbox = action({
     const cat = (args.category ?? "other") as VendorCategory;
     const inboxId = CATEGORY_INBOX[cat] ?? CATEGORY_INBOX.other;
 
-    await ctx.runMutation(api.vendors.updateStage, {
+    // Only save the inbox — stage stays "discovered" until email/form is actually sent
+    await ctx.runMutation(api.vendors.setInboxId, {
       vendorId: args.vendorId,
-      stage: "contacted",
       agentmailInboxId: inboxId,
     });
 

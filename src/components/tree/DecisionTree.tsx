@@ -1,37 +1,40 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useForageStore } from "@/lib/store";
 import { TreeNode } from "./TreeNode";
 import { motion, AnimatePresence } from "framer-motion";
-import { playClick } from "@/lib/sounds";
+import { playClick, playChime } from "@/lib/sounds";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
 
 type QuestDoc = Doc<"quests">;
 type VendorDoc = Doc<"vendors">;
 
+type ViewMode = "tree" | "compare" | "recommend";
+
 export function DecisionTree() {
+  const router = useRouter();
   const userId = useForageStore((s) => s.userId);
   const activeQuestId = useForageStore((s) => s.activeQuestId);
   const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
 
-  const quests = useQuery(
-    api.quests.listByUser,
-    userId ? { userId } : "skip"
-  );
-
-  const vendors = useQuery(
-    api.vendors.listByUser,
-    userId ? { userId } : "skip"
-  );
+  const quests = useQuery(api.quests.listByUser, userId ? { userId } : "skip");
+  const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
 
   const removeQuest = useMutation(api.quests.remove);
   const removeVendor = useMutation(api.vendors.remove);
+  const getRecommendation = useAction(api.actions.claude.recommendBestVendor);
 
   const [confirmDeleteQuest, setConfirmDeleteQuest] = useState<Id<"quests"> | null>(null);
   const [confirmDeleteVendor, setConfirmDeleteVendor] = useState<Id<"vendors"> | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("tree");
+  const [recommendedVendorId, setRecommendedVendorId] = useState<string | null>(null);
+  const [recommendReason, setRecommendReason] = useState<string | null>(null);
+  const [loadingRec, setLoadingRec] = useState(false);
 
   if (!quests || quests.length === 0) {
     return (
@@ -60,6 +63,39 @@ export function DecisionTree() {
   const questVendors = (vendors ?? []).filter(
     (v: VendorDoc) => v.questId === resolvedQuestId
   );
+
+  // Vendors that have received a quote
+  const vendorsWithQuotes = questVendors.filter((v: VendorDoc) => v.quote?.price || v.quote?.moq || v.quote?.leadTime);
+
+  async function handleRecommend() {
+    if (questVendors.length === 0) return;
+    setLoadingRec(true);
+    setViewMode("recommend");
+    try {
+      const result = await getRecommendation({
+        vendors: questVendors.map((v: VendorDoc) => ({
+          vendorId: v._id,
+          companyName: v.companyName,
+          stage: v.stage,
+          quote: v.quote ?? undefined,
+          agentNotes: v.agentNotes ?? undefined,
+          location: v.location ?? undefined,
+        })),
+        questDescription: activeQuest.description,
+      });
+      if (result?.vendorId) {
+        setRecommendedVendorId(result.vendorId);
+        setRecommendReason(result.reason);
+        playChime();
+      } else {
+        setRecommendReason(result?.reason ?? "Not enough data yet.");
+      }
+    } catch {
+      setRecommendReason("Couldn't get recommendation — try again.");
+    } finally {
+      setLoadingRec(false);
+    }
+  }
 
   return (
     <div className="h-full overflow-auto scrollable p-6">
@@ -103,7 +139,134 @@ export function DecisionTree() {
         ))}
       </div>
 
-      {/* Tree visualization */}
+      {/* View mode tabs */}
+      {questVendors.length > 0 && (
+        <div className="flex items-center gap-2 mb-6">
+          {(["tree", "compare", "recommend"] as ViewMode[]).map((mode) => (
+            <motion.button
+              key={mode}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => { playClick(); setViewMode(mode); if (mode === "recommend" && !recommendedVendorId) handleRecommend(); }}
+              className="px-3 py-1.5 rounded-full text-xs font-extrabold transition-all"
+              style={viewMode === mode
+                ? { background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }
+                : { background: "var(--cream)", color: "var(--text)", border: "2px solid var(--border-game)" }
+              }
+            >
+              {mode === "tree" ? "🌳 Tree" : mode === "compare" ? "📊 Compare" : "⭐ Recommend"}
+            </motion.button>
+          ))}
+        </div>
+      )}
+
+      {/* ── COMPARE VIEW ─────────────────────────────────────────────── */}
+      {viewMode === "compare" && questVendors.length > 0 && (
+        <div className="overflow-x-auto rounded-2xl mb-6" style={{ border: "2px solid var(--border-game)" }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: "var(--primary)", color: "white" }}>
+                <th className="px-3 py-2.5 text-left font-extrabold">Vendor</th>
+                <th className="px-3 py-2.5 text-center font-extrabold">Stage</th>
+                <th className="px-3 py-2.5 text-center font-extrabold">💰 Price</th>
+                <th className="px-3 py-2.5 text-center font-extrabold">📦 MOQ</th>
+                <th className="px-3 py-2.5 text-center font-extrabold">⏱ Lead</th>
+                <th className="px-3 py-2.5 text-center font-extrabold">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {questVendors.map((v: VendorDoc, i: number) => {
+                const stageColor = STAGE_COLORS[v.stage as VendorStage] ?? "#888";
+                const stageLabel = STAGE_LABELS[v.stage as VendorStage] ?? v.stage;
+                const isRec = v._id === recommendedVendorId;
+                return (
+                  <tr
+                    key={v._id}
+                    onClick={() => { playClick(); router.push(`/vendor/${v._id}`); }}
+                    className="cursor-pointer transition-colors"
+                    style={{
+                      background: isRec ? "rgba(255,208,74,0.12)" : i % 2 === 0 ? "var(--cream)" : "var(--panel)",
+                      borderBottom: "1px solid var(--border-game)",
+                    }}
+                  >
+                    <td className="px-3 py-2.5 font-extrabold" style={{ color: "var(--text)" }}>
+                      {isRec && <span className="mr-1">⭐</span>}
+                      {v.companyName}
+                      {v.location && <div className="text-xs font-normal opacity-60">{v.location}</div>}
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: stageColor + "22", color: stageColor }}>
+                        {stageLabel}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-bold" style={{ color: "var(--text)" }}>
+                      {v.quote?.price ?? <span className="opacity-30">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-bold" style={{ color: "var(--text)" }}>
+                      {v.quote?.moq ?? <span className="opacity-30">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-bold" style={{ color: "var(--text)" }}>
+                      {v.quote?.leadTime ?? <span className="opacity-30">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 max-w-[180px]" style={{ color: "var(--muted)" }}>
+                      {v.agentNotes ? v.agentNotes.slice(0, 80) + (v.agentNotes.length > 80 ? "…" : "") : <span className="opacity-30">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {vendorsWithQuotes.length === 0 && (
+            <div className="text-center py-4 text-xs font-semibold" style={{ color: "var(--muted)" }}>
+              No quotes yet — vendors need to reply first
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── RECOMMEND VIEW ───────────────────────────────────────────── */}
+      {viewMode === "recommend" && (
+        <AnimatePresence>
+          {loadingRec ? (
+            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="flex flex-col items-center gap-3 py-8">
+              <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+                className="text-3xl">🌿</motion.div>
+              <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>Forage is picking the best...</div>
+            </motion.div>
+          ) : recommendReason ? (
+            <motion.div key="result" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl px-5 py-4 mb-6"
+              style={{ background: "var(--cream)", border: "2.5px solid var(--accent)" }}>
+              <div className="flex items-start gap-3">
+                <div className="text-2xl flex-shrink-0">⭐</div>
+                <div>
+                  {recommendedVendorId && (
+                    <div className="text-sm font-extrabold mb-1" style={{ color: "var(--primary-dark)" }}>
+                      Best pick: {questVendors.find((v: VendorDoc) => v._id === recommendedVendorId)?.companyName}
+                    </div>
+                  )}
+                  <div className="text-xs font-semibold leading-relaxed" style={{ color: "var(--text)" }}>
+                    {recommendReason}
+                  </div>
+                  {recommendedVendorId && (
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => { playClick(); router.push(`/vendor/${recommendedVendorId}`); }}
+                      className="mt-2.5 px-3 py-1.5 rounded-full text-xs font-extrabold"
+                      style={{ background: "var(--primary)", color: "white", border: "2px solid var(--primary-dark)" }}
+                    >
+                      View vendor →
+                    </motion.button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      )}
+
+      {/* ── TREE VIEW ────────────────────────────────────────────────── */}
+      {viewMode !== "compare" && (
       <div className="flex flex-col items-center gap-6">
         {/* Root quest node with agent character */}
         <div className="flex flex-col items-center">
@@ -137,7 +300,7 @@ export function DecisionTree() {
                     _id: vendor._id,
                     label: vendor.companyName,
                     stage: vendor.stage,
-                    isRecommended: false,
+                    isRecommended: vendor._id === recommendedVendorId,
                     isDead: vendor.stage === "dead",
                     deadReason: vendor.deadReason,
                     reason: vendor.agentNotes,
@@ -176,6 +339,7 @@ export function DecisionTree() {
           </div>
         )}
       </div>
+      )} {/* end tree view */}
 
       {/* Confirm delete quest modal */}
       <AnimatePresence>

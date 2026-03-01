@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAction, useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
-import { playForagingStart, playChime, playClick, playDialogueBlip } from "@/lib/sounds";
+import { playForagingStart, playChime, playClick, playDialogueBlip, playMessage } from "@/lib/sounds";
 
 const QUICK_SEARCHES = [
   "Cotton fabric manufacturers in Vietnam",
@@ -17,6 +17,13 @@ const QUICK_SEARCHES = [
 
 const GREETING_TEXT =
   "Hey there! I'm Forage — your sourcing agent. Tell me what you're looking for and I'll scout the web for real vendors. You can be specific or vague — I'll figure it out!";
+
+type ChatMessage = {
+  role: "agent" | "user";
+  content: string;
+  choices?: string[];
+  pendingQuery?: string; // query to forage if user picks a choice
+};
 
 interface ForageSearchProps {
   onClose: () => void;
@@ -32,9 +39,13 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
   const [isForaging, setIsForaging] = useState(false);
   const [greetingVisible, setGreetingVisible] = useState(false);
   const [greetingText, setGreetingText] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const forageVendors = useAction(api.actions.forage.forageForVendors);
+  const generateChatResponse = useAction(api.actions.claude.generateChatResponse);
 
   // Typewriter greeting
   useEffect(() => {
@@ -59,8 +70,8 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
     return () => clearTimeout(t);
   }, []);
 
-  async function handleSearch(query?: string) {
-    const q = query ?? input.trim();
+  // Directly forage — no chat step
+  async function doForage(q: string) {
     if (!q || !userId || agentBusy) return;
     setIsForaging(true);
     setAgentBusy(true, "Foraging...");
@@ -79,6 +90,54 @@ export function ForageSearch({ onClose }: ForageSearchProps) {
       setIsForaging(false);
       setAgentBusy(false);
     }
+  }
+
+  // Chat-first: ask Claude for refinement choices, then forage
+  async function handleSearch(query?: string) {
+    const q = query ?? input.trim();
+    if (!q || !userId || agentBusy) return;
+    setInput("");
+
+    // Add user message to chat
+    const userMsg: ChatMessage = { role: "user", content: q };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
+    playMessage?.();
+
+    try {
+      const result = await generateChatResponse({
+        userMessage: `The user wants to forage for vendors. Their search query is: "${q}"\n\nOffer 3-4 refined search variations as choices (different regions, specs, or approaches). One option must always be 'Search as-is: ${q}'. Format choices as complete, ready-to-search strings starting with 🔍.`,
+        conversationHistory: chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        userContext: { mode: "search_refinement" },
+      });
+
+      const agentMsg: ChatMessage = {
+        role: "agent",
+        content: result.text,
+        choices: result.choices ?? [`🔍 Search as-is: ${q}`],
+        pendingQuery: q,
+      };
+      setChatMessages((prev) => [...prev, agentMsg]);
+      playDialogueBlip("fox");
+    } catch {
+      // Claude failed — forage directly
+      await doForage(q);
+    } finally {
+      setChatLoading(false);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    }
+  }
+
+  // User clicks a choice → extract query (strip leading emoji + label) and forage
+  async function handleChoiceClick(choice: string, pendingQuery: string) {
+    playClick();
+    // Strip "🔍 Search as-is: " or "🔍 " prefix to get the raw query
+    const cleanChoice = choice.replace(/^🔍\s*(Search as-is:\s*)?/i, "").trim();
+    const finalQuery = cleanChoice || pendingQuery;
+
+    const userMsg: ChatMessage = { role: "user", content: choice };
+    setChatMessages((prev) => [...prev, userMsg]);
+    await doForage(finalQuery);
   }
 
   return (
