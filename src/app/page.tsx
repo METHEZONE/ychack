@@ -6,13 +6,14 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
 import { LS_USER_ID } from "@/lib/constants";
 import { OnboardingFlow, PendingOnboardData } from "@/components/onboarding/OnboardingFlow";
 import { playChime, playClick, startAmbientMusic } from "@/lib/sounds";
 import { getSpriteSheet } from "@/lib/sprites";
+import { Id } from "../../convex/_generated/dataModel";
 
 type PageMode = "loading" | "title" | "onboarding";
 
@@ -157,6 +158,7 @@ export default function Home() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const setUserId = useForageStore((s) => s.setUserId);
+  const setActiveQuestId = useForageStore((s) => s.setActiveQuestId);
   const initFromLocalStorage = useForageStore((s) => s.initFromLocalStorage);
 
   const [mode, setMode] = useState<PageMode>("loading");
@@ -164,26 +166,64 @@ export default function Home() {
   const [demoLoading, setDemoLoading] = useState(false);
   const [musicStarted, setMusicStarted] = useState(false);
   const [pendingData, setPendingData] = useState<PendingOnboardData | null>(null);
+  const [sessionRestored, setSessionRestored] = useState(false);
 
   const createUser = useMutation(api.users.create);
   const seedDemo = useMutation(api.demo.seedDemoVendors);
 
-  // Routing — always show title first. Google OAuth return → onboarding with pending data.
+  // Google user lookup: find existing Convex user by email
+  const googleEmail = session?.user?.email ?? undefined;
+  const existingGoogleUser = useQuery(
+    api.users.getByEmail,
+    googleEmail ? { email: googleEmail } : "skip"
+  );
+
+  // Routing — check for existing session first, then show title/onboarding.
   useEffect(() => {
     if (status === "loading") return;
     initFromLocalStorage();
 
+    // 1. Check localStorage for existing userId
+    const savedId = localStorage.getItem(LS_USER_ID);
+    if (savedId) {
+      setUserId(savedId as Id<"users">);
+      router.replace("/village");
+      return;
+    }
+
     if (session?.user) {
-      // Returning from Google OAuth — recover pending onboarding data
+      // 2. Google session exists — check if pending onboarding data
       const raw = localStorage.getItem("forage_pending_onboard");
       if (raw) {
         try { setPendingData(JSON.parse(raw) as PendingOnboardData); } catch { /* ignore */ }
+        setMode("onboarding");
+        return;
       }
-      setMode("onboarding");
+      // 3. Wait for Convex query to check if user already exists
+      // (handled in separate useEffect below)
+      if (!sessionRestored) return; // wait
+      setMode("onboarding"); // new Google user, needs onboarding
     } else {
       setMode("title");
     }
-  }, [status, session, initFromLocalStorage]);
+  }, [status, session, initFromLocalStorage, router, setUserId, sessionRestored]);
+
+  // Auto-restore: if Google user already has a Convex account, go straight to village
+  useEffect(() => {
+    if (!googleEmail || existingGoogleUser === undefined) return; // still loading
+    if (existingGoogleUser) {
+      // Existing user found — restore session
+      localStorage.setItem(LS_USER_ID, existingGoogleUser._id);
+      setUserId(existingGoogleUser._id);
+      if (existingGoogleUser.activeQuestId) {
+        setActiveQuestId(existingGoogleUser.activeQuestId as Id<"quests">);
+      }
+      router.replace("/village");
+      return;
+    }
+    // No existing user — let the main useEffect proceed to onboarding
+    setSessionRestored(true);
+  }, [googleEmail, existingGoogleUser, setUserId, setActiveQuestId, router]);
 
   const triggerMusic = useCallback(() => {
     if (!musicStarted) {
@@ -247,7 +287,10 @@ export default function Home() {
     return (
       <main className="w-full h-screen overflow-hidden">
         <OnboardingFlow
-          googleUser={session?.user ?? null}
+          googleUser={session?.user ? {
+            ...session.user,
+            googleId: (session.user as Record<string, unknown>).googleId as string | undefined,
+          } : null}
           pendingData={pendingData}
         />
       </main>

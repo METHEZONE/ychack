@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { useForageStore } from "@/lib/store";
 import { playClick, playChime } from "@/lib/sounds";
-
-const LS_TUTORIAL_DONE = "forage_tutorial_done";
 
 const STEPS = [
   {
@@ -34,16 +35,21 @@ const STEPS = [
 ];
 
 export function VillageTutorial() {
+  const userId = useForageStore((s) => s.userId);
+  const updatePrefs = useMutation(api.users.updatePreferences);
+  const user = useQuery(api.users.get, userId ? { userId } : "skip");
+
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // Show only for first-time visitors (after a short delay)
-    if (!localStorage.getItem(LS_TUTORIAL_DONE)) {
+    // Show only for first-time visitors (check DB)
+    if (user === undefined) return; // loading
+    if (user && !user.tutorialDone) {
       const t = setTimeout(() => setVisible(true), 800);
       return () => clearTimeout(t);
     }
-  }, []);
+  }, [user]);
 
   function handleNext() {
     playClick();
@@ -51,13 +57,13 @@ export function VillageTutorial() {
       setStep(step + 1);
     } else {
       playChime();
-      localStorage.setItem(LS_TUTORIAL_DONE, "1");
+      if (userId) updatePrefs({ userId, tutorialDone: true });
       setVisible(false);
     }
   }
 
   function handleSkip() {
-    localStorage.setItem(LS_TUTORIAL_DONE, "1");
+    if (userId) updatePrefs({ userId, tutorialDone: true });
     setVisible(false);
   }
 

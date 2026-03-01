@@ -11,6 +11,7 @@ import { EmailThread } from "./EmailThread";
 import { ANIMAL_EMOJI, ANIMAL_COLORS, AnimalType } from "@/lib/animals";
 import { STAGE_COLORS, STAGE_LABELS, VendorStage } from "@/lib/constants";
 import { playClick, playChime, playNegotiate } from "@/lib/sounds";
+import { useForageStore } from "@/lib/store";
 
 interface VendorDetailProps {
   vendorId: string;
@@ -25,7 +26,9 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   const draftNegotiation = useAction(api.actions.claude.draftNegotiationEmail);
   const sendEmailAction = useAction(api.actions.agentmail.sendEmail);
   const createInbox = useAction(api.actions.agentmail.createVendorInbox);
+  const smartFormSubmit = useAction(api.actions.smartOutreach.smartFormSubmission);
   const updateStage = useMutation(api.vendors.updateStage);
+  const userId = useForageStore((s) => s.userId);
 
   const [negotiationDraft, setNegotiationDraft] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
@@ -33,6 +36,8 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   const [editedDraft, setEditedDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [formSubmitStarted, setFormSubmitStarted] = useState(false);
 
   if (vendor === undefined) {
     return (
@@ -133,6 +138,24 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
   function handleEditFirst() {
     setEditMode(true);
     setEditedDraft(negotiationDraft ?? "");
+  }
+
+  async function handleSmartFormSubmit() {
+    if (!vendor || !userId) return;
+    playClick();
+    setFormSubmitting(true);
+    try {
+      await smartFormSubmit({
+        vendorId: vendor._id,
+        userId,
+      });
+      setFormSubmitStarted(true);
+      playChime();
+    } catch (e) {
+      console.error("Smart form submission failed:", e);
+    } finally {
+      setFormSubmitting(false);
+    }
   }
 
   return (
@@ -262,6 +285,81 @@ export function VendorDetail({ vendorId }: VendorDetailProps) {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Smart Form Submission */}
+      {vendor.website && !vendor.formSubmitted && !formSubmitStarted && (
+        <div
+          className="rounded-3xl p-5 mb-5"
+          style={{ background: "var(--cream)", border: "3px solid var(--border-game)" }}
+        >
+          <h2 className="text-xs font-extrabold mb-3 tracking-wider" style={{ color: "var(--primary-dark)" }}>
+            📋 CONTACT FORM
+          </h2>
+          <p className="text-sm font-semibold mb-3" style={{ color: "var(--muted)" }}>
+            Let your AI agent find and fill this vendor&apos;s contact form with a personalized message based on your conversation.
+          </p>
+          <motion.button
+            onClick={handleSmartFormSubmit}
+            disabled={formSubmitting || !userId}
+            whileHover={{ scale: formSubmitting ? 1 : 1.04 }}
+            whileTap={{ scale: formSubmitting ? 1 : 0.96 }}
+            className="w-full py-3 rounded-2xl text-sm font-extrabold transition-colors disabled:opacity-50"
+            style={{
+              background: "var(--primary)",
+              color: "white",
+              border: "2.5px solid var(--primary-dark)",
+            }}
+          >
+            {formSubmitting ? "Composing message..." : "📋 Submit Contact Form"}
+          </motion.button>
+        </div>
+      )}
+
+      {/* Form submission in progress */}
+      {formSubmitStarted && !vendor.formSubmitted && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl p-4 mb-5 flex items-center gap-3"
+          style={{ background: "#FFF8E1", border: "2.5px solid #FFB300" }}
+        >
+          <motion.span
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+            className="text-2xl flex-shrink-0"
+          >
+            🌐
+          </motion.span>
+          <div>
+            <div className="text-sm font-extrabold" style={{ color: "#E65100" }}>
+              Submitting contact form...
+            </div>
+            <div className="text-xs font-semibold" style={{ color: "#BF360C" }}>
+              Browser agent is visiting {vendor.companyName}&apos;s website. This takes 2-3 minutes.
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Form already submitted */}
+      {vendor.formSubmitted && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl p-4 mb-5 flex items-center gap-3"
+          style={{ background: "#E8F5D0", border: "2.5px solid var(--primary)" }}
+        >
+          <span className="text-2xl">📋</span>
+          <div>
+            <div className="text-sm font-extrabold" style={{ color: "var(--primary-dark)" }}>
+              Contact form submitted!
+            </div>
+            <div className="text-xs font-semibold" style={{ color: "var(--primary-dark)" }}>
+              Your inquiry was sent via {vendor.companyName}&apos;s website contact form.
+            </div>
+          </div>
+        </motion.div>
       )}
 
       {/* Actions */}

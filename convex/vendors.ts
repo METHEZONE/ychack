@@ -109,6 +109,29 @@ export const getByInboxId = query({
   },
 });
 
+export const approveVendor = mutation({
+  args: { vendorId: v.id("vendors") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.vendorId, { userApproved: true, userSeen: true });
+  },
+});
+
+export const markVendorSeen = mutation({
+  args: { vendorId: v.id("vendors") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.vendorId, { userSeen: true });
+  },
+});
+
+export const bulkApprove = mutation({
+  args: { vendorIds: v.array(v.id("vendors")) },
+  handler: async (ctx, args) => {
+    for (const id of args.vendorIds) {
+      await ctx.db.patch(id, { userApproved: true, userSeen: true });
+    }
+  },
+});
+
 export const updatePosition = mutation({
   args: {
     vendorId: v.id("vendors"),

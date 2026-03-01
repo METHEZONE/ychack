@@ -5,6 +5,7 @@ export default defineSchema({
   users: defineTable({
     name: v.string(),
     email: v.optional(v.string()),
+    googleId: v.optional(v.string()), // Google OAuth provider account ID
     avatar: v.optional(v.string()), // selected animal avatar for the player
     companyName: v.optional(v.string()),
     companyDescription: v.optional(v.string()),
@@ -13,7 +14,14 @@ export default defineSchema({
     needs: v.optional(v.array(v.string())), // what they're looking for
     isNewBusiness: v.optional(v.boolean()),
     villageName: v.optional(v.string()),
-  }),
+    sessionToken: v.optional(v.string()), // for local (non-Google) session persistence
+    activeQuestId: v.optional(v.string()), // currently active quest
+    tutorialDone: v.optional(v.boolean()),
+    demoSeeded: v.optional(v.boolean()),
+  })
+    .index("by_email", ["email"])
+    .index("by_google_id", ["googleId"])
+    .index("by_session_token", ["sessionToken"]),
 
   quests: defineTable({
     userId: v.id("users"),
@@ -62,6 +70,8 @@ export default defineSchema({
       })
     ),
     agentNotes: v.optional(v.string()), // AI assessment
+    userApproved: v.optional(v.boolean()), // user approved vendor into village
+    userSeen: v.optional(v.boolean()), // user has seen this vendor notification
     positionX: v.optional(v.number()), // village x position
     positionY: v.optional(v.number()), // village y position
   })

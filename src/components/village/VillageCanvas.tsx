@@ -71,12 +71,11 @@ export function VillageCanvas({
   onMoveInComplete,
 }: VillageCanvasProps) {
   const userId = useForageStore((s) => s.userId);
-  const isApproved = useForageStore((s) => s.isApproved);
 
   const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
 
-  // Only show on map if approved
-  const approvedVendors = (vendors ?? []).filter((v: VendorDoc) => isApproved(v._id));
+  // Only show on map if approved (using DB field)
+  const approvedVendors = (vendors ?? []).filter((v: VendorDoc) => v.userApproved);
 
   // DOM refs for game loop
   const playerRef = useRef<HTMLDivElement>(null);

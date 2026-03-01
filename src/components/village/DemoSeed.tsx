@@ -7,8 +7,6 @@ import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
 import { playChime } from "@/lib/sounds";
 
-const LS_DEMO_SEEDED = "forage_demo_seeded";
-
 export function DemoSeed() {
   const userId = useForageStore((s) => s.userId);
   const activeQuestId = useForageStore((s) => s.activeQuestId);
@@ -18,18 +16,21 @@ export function DemoSeed() {
   const [seeding, setSeeding] = useState(false);
 
   const seedDemoVendors = useMutation(api.demo.seedDemoVendors);
+  const updatePrefs = useMutation(api.users.updatePreferences);
   const vendors = useQuery(
     api.vendors.listByUser,
     userId ? { userId } : "skip"
   );
+  const user = useQuery(api.users.get, userId ? { userId } : "skip");
 
   useEffect(() => {
-    // If village is empty AND hasn't been seeded before, prompt
-    if (vendors && vendors.length === 0 && !localStorage.getItem(LS_DEMO_SEEDED) && userId) {
+    // If village is empty AND hasn't been seeded before (check DB), prompt
+    if (user === undefined || vendors === undefined) return; // loading
+    if (vendors && vendors.length === 0 && !user?.demoSeeded && userId) {
       const t = setTimeout(() => setShowPrompt(true), 2000);
       return () => clearTimeout(t);
     }
-  }, [vendors, userId]);
+  }, [vendors, userId, user]);
 
   async function handleSeed() {
     if (!userId) return;
@@ -41,9 +42,10 @@ export function DemoSeed() {
       });
       if (result && result.questId && !activeQuestId) {
         setActiveQuestId(result.questId as Parameters<typeof setActiveQuestId>[0]);
+        await updatePrefs({ userId, activeQuestId: result.questId as string });
       }
+      await updatePrefs({ userId, demoSeeded: true });
       playChime();
-      localStorage.setItem(LS_DEMO_SEEDED, "1");
     } finally {
       setSeeding(false);
       setShowPrompt(false);
@@ -51,7 +53,7 @@ export function DemoSeed() {
   }
 
   function handleDismiss() {
-    localStorage.setItem(LS_DEMO_SEEDED, "1");
+    if (userId) updatePrefs({ userId, demoSeeded: true });
     setShowPrompt(false);
   }
 

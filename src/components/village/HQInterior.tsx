@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useForageStore } from "@/lib/store";
 import { ANIMAL_EMOJI, ANIMAL_COLORS, AnimalType } from "@/lib/animals";
@@ -19,18 +19,16 @@ interface HQInteriorProps {
 
 export function HQInterior({ onClose, onApprove }: HQInteriorProps) {
   const userId = useForageStore((s) => s.userId);
-  const isApproved = useForageStore((s) => s.isApproved);
-  const approveVendor = useForageStore((s) => s.approveVendor);
-  const markVendorSeen = useForageStore((s) => s.markVendorSeen);
-  const isSeen = useForageStore((s) => s.isSeen);
+  const approveVendorMut = useMutation(api.vendors.approveVendor);
+  const markSeenMut = useMutation(api.vendors.markVendorSeen);
 
   const [tab, setTab] = useState<"replies" | "waiting">("replies");
   const [passing, setPassing] = useState<Set<string>>(new Set());
 
   const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
 
-  // Vendors not yet approved
-  const unapproved = (vendors ?? []).filter((v: VendorDoc) => !isApproved(v._id));
+  // Vendors not yet approved (using DB field)
+  const unapproved = (vendors ?? []).filter((v: VendorDoc) => !v.userApproved);
 
   // Waiting = discovered/contacted (no reply yet)
   const waiting = unapproved.filter((v: VendorDoc) =>
@@ -44,8 +42,7 @@ export function HQInterior({ onClose, onApprove }: HQInteriorProps) {
 
   function handleApprove(vendor: VendorDoc) {
     playNPCArrival();
-    approveVendor(vendor._id);
-    markVendorSeen(vendor._id);
+    approveVendorMut({ vendorId: vendor._id });
     onApprove(vendor);
   }
 
@@ -55,7 +52,7 @@ export function HQInterior({ onClose, onApprove }: HQInteriorProps) {
   }
 
   function handleMarkSeen(id: string) {
-    markVendorSeen(id);
+    markSeenMut({ vendorId: id as Parameters<typeof markSeenMut>[0]["vendorId"] });
   }
 
   return (
@@ -161,7 +158,7 @@ export function HQInterior({ onClose, onApprove }: HQInteriorProps) {
                         key={vendor._id}
                         vendor={vendor}
                         index={i}
-                        isNew={!isSeen(vendor._id)}
+                        isNew={!vendor.userSeen}
                         onApprove={() => handleApprove(vendor)}
                         onPass={() => handlePass(vendor._id)}
                         onSeen={() => handleMarkSeen(vendor._id)}

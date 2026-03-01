@@ -24,15 +24,18 @@ interface GoogleUser {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  googleId?: string | null;
 }
 
 export interface PendingOnboardData {
   name: string;
   villageName: string;
   charType: string;
+  email?: string;
   companyData: {
     isNewBusiness: boolean;
     companyName?: string;
+    companyDescription?: string;
     productIdea?: string;
     website?: string;
   } | null;
@@ -209,6 +212,9 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
 
   const createUser   = useMutation(api.users.create);
   const updateCompany = useMutation(api.users.updateCompanyData);
+  const setGoogleId  = useMutation(api.users.setGoogleId);
+  const setSessionToken = useMutation(api.users.setSessionToken);
+  const updatePrefs  = useMutation(api.users.updatePreferences);
   const createQuest  = useMutation(api.quests.create);
   const scrapeWebsite = useAction(api.actions.browserUse.scrapeWebsite);
   const analyzeProduct = useAction(api.actions.claude.analyzeProductNeed);
@@ -220,7 +226,7 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
   function goNext(s: OnboardingStep) { setDir(1); playClick(); setStep(s); }
 
   // ── Convex: create user + quests ──────────────────────────────────────────
-  async function finishOnboarding(needs: Need[]) {
+  async function finishOnboarding(needs: Need[], email?: string | null, gUser?: GoogleUser | null) {
     const userId = await createUser({
       name: name || "Founder",
       avatar: charType,
@@ -229,16 +235,43 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
     });
     await updateCompany({
       userId,
+      email: email || undefined,
       companyName: companyData?.companyName,
+      companyDescription: companyData?.companyDescription || companyData?.productIdea || undefined,
       website: companyData?.website,
       isNewBusiness: companyData?.isNewBusiness,
       needs: needs.map(n => n.category),
     });
+
+    // Link Google identity if available
+    const gid = gUser?.googleId;
+    if (gid) {
+      await setGoogleId({ userId, googleId: gid });
+    }
+
+    // Generate session token for local persistence (cookie)
+    const token = crypto.randomUUID();
+    await setSessionToken({ userId, sessionToken: token });
+    // Set cookie via API route
+    try {
+      await fetch("/api/auth/local-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, sessionToken: token }),
+      });
+    } catch { /* non-critical */ }
+
     let firstQuestId = null;
     for (const need of needs) {
       const qId = await createQuest({ userId, description: need.searchQuery || `Find ${need.category} vendors` });
       if (!firstQuestId) firstQuestId = qId;
     }
+
+    // Save activeQuestId to DB
+    if (firstQuestId) {
+      await updatePrefs({ userId, activeQuestId: firstQuestId });
+    }
+
     localStorage.setItem(LS_USER_ID, userId);
     localStorage.removeItem("forage_pending_onboard");
     setUserId(userId);
@@ -252,7 +285,7 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
     if (!pendingData || !googleUser?.name) return;
     const t = setTimeout(async () => {
       try {
-        await finishOnboarding(pendingData.needs);
+        await finishOnboarding(pendingData.needs, googleUser?.email || pendingData.email, googleUser);
         playChime();
         setStep("done");
         setTimeout(() => router.push("/village"), 1800);
@@ -270,7 +303,7 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
     setCompanyError("");
     try {
       const scraped = await scrapeWebsite({ url: website });
-      setCompanyData({ isNewBusiness: false, companyName: scraped?.companyName, website });
+      handleExistingBizScrapeResult(scraped as { companyName?: string; description?: string } | null);
     } catch {
       setCompanyError("Couldn't scrape — continuing anyway.");
       setCompanyData({ isNewBusiness: false, website });
@@ -282,7 +315,7 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
 
   async function handleNewIdea() {
     if (!productIdea.trim()) return;
-    setCompanyData({ isNewBusiness: true, productIdea });
+    setCompanyData({ isNewBusiness: true, productIdea, companyDescription: productIdea });
     setNeedsAnalyzing(true);
     try {
       const needs = await analyzeProduct({ productIdea });
@@ -315,6 +348,16 @@ export function OnboardingFlow({ googleUser, pendingData }: OnboardingFlowProps)
     const pending: PendingOnboardData = { name, villageName, charType, companyData, needs };
     localStorage.setItem("forage_pending_onboard", JSON.stringify(pending));
     signIn("google", { callbackUrl: "/" });
+  }
+
+  // Store companyDescription from scrape result
+  function handleExistingBizScrapeResult(scraped: { companyName?: string; description?: string } | null) {
+    setCompanyData({
+      isNewBusiness: false,
+      companyName: scraped?.companyName,
+      companyDescription: scraped?.description,
+      website,
+    });
   }
 
   // ── Animation ──────────────────────────────────────────────────────────────

@@ -199,6 +199,45 @@ export const sendConfirmationEmail = action({
   },
 });
 
+// ─── Send confirmation email to user after form submission ──────────────────
+export const sendFormConfirmationEmail = action({
+  args: {
+    to: v.string(),
+    vendorName: v.string(),
+    vendorWebsite: v.string(),
+    submittedMessage: v.string(),
+    category: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const mail = getClient();
+    const cat = (args.category ?? "other") as VendorCategory;
+    const inboxId = CATEGORY_INBOX[cat] ?? CATEGORY_INBOX.other;
+
+    const body = [
+      `Your Forage agent just submitted a contact form for ${args.vendorName}.`,
+      "",
+      `Vendor website: ${args.vendorWebsite}`,
+      "",
+      "Message submitted:",
+      "---",
+      args.submittedMessage,
+      "---",
+      "",
+      "You'll be notified when they respond. 🌿",
+      "",
+      "— Forage Agent",
+    ].join("\n");
+
+    await mail.inboxes.messages.send(inboxId, {
+      to: [args.to],
+      subject: `📋 Forage submitted a contact form to ${args.vendorName}`,
+      text: body,
+    });
+
+    return { sent: true };
+  },
+});
+
 // ─── Webhook: handle inbound reply from a vendor ──────────────────────────────
 // 1. Matches vendor via [ref:vendorId] in subject
 // 2. Runs Claude to analyze reply + draft follow-up

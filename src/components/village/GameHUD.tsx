@@ -20,8 +20,6 @@ export function GameHUD({ onForageOpen, onHQOpen }: GameHUDProps) {
   const userId = useForageStore((s) => s.userId);
   const agentBusy = useForageStore((s) => s.agentBusy);
   const agentStatus = useForageStore((s) => s.agentStatus);
-  const isSeen = useForageStore((s) => s.isSeen);
-  const markVendorSeen = useForageStore((s) => s.markVendorSeen);
   const router = useRouter();
   const [soundOn, setSoundOn] = useState(true);
   const [showWASD, setShowWASD] = useState(true);
@@ -37,9 +35,9 @@ export function GameHUD({ onForageOpen, onHQOpen }: GameHUDProps) {
     return () => clearTimeout(t);
   }, []);
 
-  // Unread = vendors that replied but haven't been seen yet
+  // Unread = vendors that replied but haven't been seen yet (using DB field)
   const unreadVendors = (vendors ?? []).filter(
-    (v: VendorDoc) => v.stage === "replied" && !isSeen(v._id)
+    (v: VendorDoc) => v.stage === "replied" && !v.userSeen
   );
   const unreadCount = unreadVendors.length;
 
@@ -117,6 +115,7 @@ export function GameHUD({ onForageOpen, onHQOpen }: GameHUDProps) {
           onClick={() => {
             playClick();
             localStorage.clear();
+            fetch("/api/auth/local-session", { method: "DELETE" }).catch(() => {});
             router.push("/");
           }}
           className="px-3 py-2 rounded-2xl text-xs font-extrabold"

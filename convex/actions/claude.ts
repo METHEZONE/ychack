@@ -286,6 +286,56 @@ Return ONLY valid JSON:
   },
 });
 
+// ─── Compose a personalized form message from chat history ────────────────────
+export const composeFormMessage = action({
+  args: {
+    vendorName: v.string(),
+    vendorWebsite: v.optional(v.string()),
+    userCompanyName: v.string(),
+    userContactName: v.string(),
+    userCompanyDescription: v.optional(v.string()),
+    productNeed: v.string(),
+    chatHistory: v.array(
+      v.object({
+        role: v.union(v.literal("user"), v.literal("agent")),
+        content: v.string(),
+      })
+    ),
+  },
+  handler: async (_ctx, args) => {
+    const chatContext = args.chatHistory.length
+      ? `Recent conversation:\n${args.chatHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}`
+      : "No prior conversation.";
+
+    const prompt = `You are drafting a contact/inquiry form message on behalf of ${args.userCompanyName} (${args.userContactName}).
+
+Vendor: ${args.vendorName}
+${args.vendorWebsite ? `Website: ${args.vendorWebsite}` : ""}
+Product need: ${args.productNeed}
+${args.userCompanyDescription ? `Company: ${args.userCompanyDescription}` : ""}
+
+${chatContext}
+
+Write a professional, friendly inquiry message suitable for a vendor's contact/quote form.
+- 2-3 short paragraphs
+- Mention what we're looking for (from the product need and chat context)
+- Ask about pricing, MOQ, and lead times
+- Keep it warm and concise
+- Do NOT include a subject line — just the message body
+- Sign off with the contact name and company name
+
+Return ONLY the message body text.`;
+
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    return (msg.content[0] as { type: string; text: string }).text;
+  },
+});
+
 export const analyzeProductNeed = action({
   args: {
     productIdea: v.string(),

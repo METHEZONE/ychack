@@ -186,6 +186,133 @@ Return "success" if submitted, or "blocked: <reason>" if not.`.trim();
   },
 });
 
+// ─── Smart fill: navigate vendor website to find + fill contact form ──────────
+// Unlike fillContactForm, this doesn't need a known formUrl — it explores the site.
+// Called from smartOutreach.ts after Claude composes the message.
+export const smartFillContactForm = action({
+  args: {
+    vendorId: v.id("vendors"),
+    vendorWebsite: v.string(),
+    companyName: v.string(),
+    contactName: v.string(),
+    contactEmail: v.string(),
+    contactPhone: v.optional(v.string()),
+    productNeed: v.string(),
+    message: v.string(),
+    userId: v.id("users"),
+    userEmail: v.optional(v.string()),
+    category: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const task = `
+You are a B2B sourcing agent for "${args.companyName}".
+
+Go to ${args.vendorWebsite} and find their contact, inquiry, or quote request form.
+Look for links like "Contact Us", "Get a Quote", "Request Info", "Inquiry Form" etc.
+
+Once you find the form, fill it with:
+- Contact Name: ${args.contactName}
+- Company / Business Name: ${args.companyName}
+- Email: ${args.contactEmail}
+- Phone: ${args.contactPhone ?? ""}
+- Product interest: ${args.productNeed}
+- Message: "${args.message}"
+
+For dropdowns like "I Am Currently", select the closest option to "Starting a new brand" or "Entrepreneur".
+For budget dropdowns, select a mid-range option.
+Check any relevant product type checkboxes based on the product need.
+
+If a reCAPTCHA appears, attempt to solve it. If it cannot be solved automatically, stop and report.
+
+Submit the form when all required fields are filled.
+
+Return JSON:
+{
+  "formFound": true/false,
+  "formSubmitted": true/false,
+  "formUrl": "URL of the form page",
+  "blockedReason": "reason if blocked, null otherwise"
+}`.trim();
+
+    let success = false;
+    let formUrl: string | null = null;
+    let output = "";
+
+    try {
+      const session = await runSession(task, "bu-mini", 1.0);
+      output = session.output ?? "";
+      const result = extractJson<{
+        formFound?: boolean;
+        formSubmitted?: boolean;
+        formUrl?: string;
+        blockedReason?: string;
+      }>(output);
+
+      success = result?.formSubmitted ?? false;
+      formUrl = result?.formUrl ?? null;
+    } catch (e) {
+      output = e instanceof Error ? e.message : "Browser Use session failed";
+    }
+
+    // Update vendor record
+    await ctx.runMutation(api.vendors.updateStage, {
+      vendorId: args.vendorId,
+      stage: success ? "contacted" : "discovered",
+      formSubmitted: success,
+    });
+
+    // Record form submission message
+    if (success) {
+      await ctx.runMutation(api.messages.create, {
+        vendorId: args.vendorId,
+        direction: "outbound",
+        content: args.message,
+        type: "form_submission",
+        isDraft: false,
+      });
+    }
+
+    // Get vendor name for notifications
+    const vendor = await ctx.runQuery(api.vendors.get, { vendorId: args.vendorId });
+    const vendorName = vendor?.companyName ?? "the vendor";
+
+    // Notify user via chat
+    if (success) {
+      await ctx.runMutation(api.chatMessages.create, {
+        userId: args.userId,
+        role: "agent",
+        content: `📋 Contact form submitted to **${vendorName}**! They'll reach out via the email on the form.`,
+        metadata: { action: "form_submitted", vendorId: args.vendorId },
+      });
+
+      // Send confirmation email to user
+      if (args.userEmail) {
+        try {
+          await ctx.runAction(api.actions.agentmail.sendFormConfirmationEmail, {
+            to: args.userEmail,
+            vendorName,
+            vendorWebsite: args.vendorWebsite,
+            submittedMessage: args.message,
+            category: args.category,
+          });
+        } catch {
+          // Non-critical — continue
+        }
+      }
+    } else {
+      await ctx.runMutation(api.chatMessages.create, {
+        userId: args.userId,
+        role: "agent",
+        content: `Could not submit the contact form for **${vendorName}**. The form might require manual input or have a captcha. You can try visiting their website directly.`,
+        choices: ["Visit website", "Try again", "Skip this vendor"],
+        metadata: { action: "form_failed", vendorId: args.vendorId },
+      });
+    }
+
+    return { success, formUrl, output };
+  },
+});
+
 // ─── Full vendor outreach: scrape + fill form (single Browser Use session) ────
 // This is the main action called per vendor found during foraging.
 // After this, call agentmail.outreachVendor to send the email follow-up.

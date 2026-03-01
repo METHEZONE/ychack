@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import nextDynamic from "next/dynamic";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { GameHUD } from "@/components/village/GameHUD";
 import { NPCDialogue } from "@/components/village/NPCDialogue";
@@ -16,7 +16,7 @@ import { VillageTutorial } from "@/components/village/VillageTutorial";
 import { DemoSeed } from "@/components/village/DemoSeed";
 import { useForageStore } from "@/lib/store";
 import { LS_USER_ID } from "@/lib/constants";
-import { Doc } from "../../../convex/_generated/dataModel";
+import { Doc, Id } from "../../../convex/_generated/dataModel";
 
 type VendorDoc = Doc<"vendors">;
 
@@ -30,8 +30,7 @@ export default function VillagePage() {
   const userId = useForageStore((s) => s.userId);
   const setUserId = useForageStore((s) => s.setUserId);
   const initFromLocalStorage = useForageStore((s) => s.initFromLocalStorage);
-  const approveVendor = useForageStore((s) => s.approveVendor);
-  const isApproved = useForageStore((s) => s.isApproved);
+  const bulkApprove = useMutation(api.vendors.bulkApprove);
 
   const [dialogueVendor, setDialogueVendor] = useState<VendorDoc | null>(null);
   const [forageSearchOpen, setForageSearchOpen] = useState(false);
@@ -40,28 +39,44 @@ export default function VillagePage() {
 
   const vendors = useQuery(api.vendors.listByUser, userId ? { userId } : "skip");
 
-  // Auth guard + init store from localStorage
+  // Auth guard: try localStorage → cookie → redirect
   useEffect(() => {
     initFromLocalStorage();
     const savedId = localStorage.getItem(LS_USER_ID);
     if (savedId && !userId) {
-      setUserId(savedId as Parameters<typeof setUserId>[0]);
-    } else if (!savedId && !userId) {
-      router.replace("/");
+      setUserId(savedId as Id<"users">);
+      return;
+    }
+    if (!savedId && !userId) {
+      // Try cookie-based session
+      fetch("/api/auth/local-session")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.userId) {
+            localStorage.setItem(LS_USER_ID, data.userId);
+            setUserId(data.userId as Parameters<typeof setUserId>[0]);
+          } else {
+            router.replace("/");
+          }
+        })
+        .catch(() => router.replace("/"));
     }
   }, [router, userId, setUserId, initFromLocalStorage]);
 
-  // Migration: auto-approve all existing vendors on first load
-  // (before this feature existed, all vendors were shown on map)
+  // Migration: auto-approve all existing vendors that don't have userApproved set
+  // (one-time migration from localStorage to Convex DB)
   useEffect(() => {
     if (!vendors || vendors.length === 0) return;
-    const migrated = localStorage.getItem("forage_migration_v1");
+    const migrated = localStorage.getItem("forage_migration_v2");
     if (migrated) return;
-    vendors.forEach((v: VendorDoc) => {
-      if (!isApproved(v._id)) approveVendor(v._id);
-    });
-    localStorage.setItem("forage_migration_v1", "1");
-  }, [vendors, isApproved, approveVendor]);
+    const toApprove = vendors
+      .filter((v: VendorDoc) => v.userApproved === undefined || v.userApproved === null)
+      .map((v: VendorDoc) => v._id as Id<"vendors">);
+    if (toApprove.length > 0) {
+      bulkApprove({ vendorIds: toApprove });
+    }
+    localStorage.setItem("forage_migration_v2", "1");
+  }, [vendors, bulkApprove]);
 
   // Escape closes all panels
   useEffect(() => {

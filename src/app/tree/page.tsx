@@ -18,8 +18,20 @@ export default function TreePage() {
     const savedId = localStorage.getItem(LS_USER_ID);
     if (savedId && !userId) {
       setUserId(savedId as Parameters<typeof setUserId>[0]);
-    } else if (!savedId && !userId) {
-      router.replace("/");
+      return;
+    }
+    if (!savedId && !userId) {
+      fetch("/api/auth/local-session")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.userId) {
+            localStorage.setItem(LS_USER_ID, data.userId);
+            setUserId(data.userId as Parameters<typeof setUserId>[0]);
+          } else {
+            router.replace("/");
+          }
+        })
+        .catch(() => router.replace("/"));
     }
   }, [router, userId, setUserId]);
 
