@@ -3,6 +3,12 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import Anthropic from "@anthropic-ai/sdk";
+import { Laminar } from "@lmnr-ai/lmnr";
+
+// Initialize Laminar once at module level — auto-instruments all Anthropic calls
+Laminar.initialize({
+  projectApiKey: process.env.LMNR_PROJECT_API_KEY,
+});
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -392,6 +398,60 @@ Return ONLY the message body text.`;
     });
 
     return (msg.content[0] as { type: string; text: string }).text;
+  },
+});
+
+// ─── Pick the best vendor from a quest's options ─────────────────────────────
+export const recommendBestVendor = action({
+  args: {
+    vendors: v.array(v.object({
+      vendorId: v.string(),
+      companyName: v.string(),
+      stage: v.string(),
+      quote: v.optional(v.any()),
+      agentNotes: v.optional(v.string()),
+      location: v.optional(v.string()),
+    })),
+    questDescription: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    const list = args.vendors.map((v, i) =>
+      `${i + 1}. ${v.companyName} (stage: ${v.stage})` +
+      (v.quote?.price ? `, price: ${v.quote.price}` : "") +
+      (v.quote?.moq ? `, MOQ: ${v.quote.moq}` : "") +
+      (v.quote?.leadTime ? `, lead time: ${v.quote.leadTime}` : "") +
+      (v.location ? `, location: ${v.location}` : "") +
+      (v.agentNotes ? `\n   Agent notes: ${v.agentNotes}` : "")
+    ).join("\n");
+
+    const prompt = `You are Forage's AI sourcing agent helping a founder choose the best vendor.
+
+What they're sourcing: "${args.questDescription}"
+
+Vendor options:
+${list}
+
+Pick the single best vendor. Prioritize: has a quote > lowest price > fastest lead time > closest location > most advanced stage.
+
+Return ONLY this JSON (no markdown):
+{"vendorId":"<exact vendorId from list>","reason":"1-2 sentences explaining why this vendor is the top pick"}
+
+If no vendors have enough info to decide, return {"vendorId":null,"reason":"Not enough quote data yet — contact more vendors first"}`;
+
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 256,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = (msg.content[0] as { type: string; text: string }).text;
+    try {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) return JSON.parse(match[0]) as { vendorId: string | null; reason: string };
+    } catch {
+      console.error("recommendBestVendor parse failed:", text);
+    }
+    return null;
   },
 });
 
