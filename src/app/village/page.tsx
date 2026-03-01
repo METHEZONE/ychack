@@ -34,6 +34,7 @@ export default function VillagePage() {
   );
 }
 
+
 function VillagePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -215,5 +216,13 @@ function VillagePageInner() {
       <DemoSeed />
       {onboardingDone && <VillageTutorial />}
     </div>
+  );
+}
+
+export default function VillagePage() {
+  return (
+    <Suspense>
+      <VillagePageInner />
+    </Suspense>
   );
 }
